@@ -23,6 +23,7 @@ from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from . import analytics, coach, scheduler
+from .garmin import WebLogin, tokens_present
 from .mcp_server import build_mcp
 from .services import Services, build_services
 
@@ -99,9 +100,13 @@ def create_app(svc: Services | None = None, run_scheduler: bool | None = None) -
         run_scheduler = os.getenv("SCHEDULER_ENABLED", "1") == "1"
     db = svc.db
 
+    garmin_login = WebLogin(svc.settings.garmin_tokenstore)
+
     def render(name: str, **ctx: Any) -> HTMLResponse:
         last = db.query_one("SELECT started_at, status FROM sync_runs ORDER BY started_at DESC LIMIT 1")
-        return HTMLResponse(TEMPLATES.get_template(name).render(last_sync=last, **ctx))
+        return HTMLResponse(TEMPLATES.get_template(name).render(
+            last_sync=last, garmin_connected=tokens_present(svc.settings.garmin_tokenstore),
+            athlete_name=svc.settings.athlete_name, **ctx))
 
     def same_origin(request: Request) -> bool:
         # Basic-auth credentials ride along on cross-site POSTs; a custom header forces a CORS preflight that fails.
@@ -164,6 +169,61 @@ def create_app(svc: Services | None = None, run_scheduler: bool | None = None) -
             log.exception("briefing failed")
             return JSONResponse({"error": "Couldn't write the briefing. Check the server log."}, 502)
 
+    async def connect_page(request: Request) -> Response:
+        return render("connect.html", page="connect")
+
+    def garmin_error(exc: Exception) -> JSONResponse:
+        kind = type(exc).__name__
+        if "Authentication" in kind:
+            msg = "Garmin didn't accept that. Check the email, password or code and try again."
+        elif "TooManyRequests" in kind or "429" in str(exc):
+            msg = "Garmin is blocking sign-ins for a while after too many tries. Wait 15 minutes, then try again."
+        elif "AuthMissing" in kind:
+            msg = str(exc)
+        else:
+            log.exception("Garmin web login failed")
+            msg = "Couldn't reach Garmin. Try again in a minute."
+        return JSONResponse({"error": msg}, 400)
+
+    def connected(result: dict[str, Any]) -> JSONResponse:
+        threading.Thread(target=scheduler.run_sync, args=(svc, "connect"), daemon=True).start()
+        return JSONResponse(result)
+
+    async def api_garmin_login(request: Request) -> Response:
+        if not same_origin(request):
+            return PlainTextResponse("forbidden", 403)
+        body = await request.json()
+        email, password = str(body.get("email", "")).strip(), str(body.get("password", ""))
+        if not email or not password:
+            return JSONResponse({"error": "Enter your Garmin email and password."}, 400)
+        try:
+            result = await run_in_threadpool(garmin_login.start, email, password)
+        except Exception as exc:  # noqa: BLE001 - mapped to a plain message
+            return garmin_error(exc)
+        return JSONResponse(result) if result["needs_code"] else connected(result)
+
+    async def api_garmin_code(request: Request) -> Response:
+        if not same_origin(request):
+            return PlainTextResponse("forbidden", 403)
+        code = str((await request.json()).get("code", "")).strip()
+        if not code:
+            return JSONResponse({"error": "Enter the code Garmin sent you."}, 400)
+        try:
+            return connected(await run_in_threadpool(garmin_login.code, code))
+        except Exception as exc:  # noqa: BLE001 - mapped to a plain message
+            return garmin_error(exc)
+
+    async def api_workout_push(request: Request) -> Response:
+        if not same_origin(request):
+            return PlainTextResponse("forbidden", 403)
+        when = str((await request.json()).get("date", "")).strip() or None
+        try:
+            w = await run_in_threadpool(svc.planner.push, request.path_params["wid"], when)
+        except Exception as exc:  # noqa: BLE001 - shown on the button
+            log.exception("push failed")
+            return JSONResponse({"error": f"Couldn't send it to Garmin: {exc}"}, 400)
+        return JSONResponse({"status": w["status"], "scheduled_date": w.get("scheduled_date")})
+
     async def api_volume(request: Request) -> Response:
         period = request.query_params.get("period", "week")
         count = int(request.query_params.get("count", "26"))
@@ -211,6 +271,9 @@ def create_app(svc: Services | None = None, run_scheduler: bool | None = None) -
             Route("/coach", coach_page), Route("/api/coach/chat", api_coach_chat, methods=["POST"]),
             Route("/api/coach/new", api_coach_new, methods=["POST"]),
             Route("/api/coach/briefing", api_coach_briefing, methods=["POST"]),
+            Route("/connect", connect_page), Route("/api/garmin/login", api_garmin_login, methods=["POST"]),
+            Route("/api/garmin/code", api_garmin_code, methods=["POST"]),
+            Route("/api/workouts/{wid}/push", api_workout_push, methods=["POST"]),
             Route("/api/volume", api_volume), Route("/api/swim", api_swim),
             Route("/api/sync", api_sync, methods=["GET", "POST"]), Route("/healthz", healthz),
         ],

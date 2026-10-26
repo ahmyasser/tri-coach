@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Connect Garmin · Tri Coach{% endblock %}
+{% block content %}
+<div style="max-width:460px;margin:24px auto 0">
+  <div class="eyebrow">One-time setup</div>
+  <h1>{{ 'Reconnect' if garmin_connected else 'Connect' }} your Garmin</h1>
+  <div class="sub">Use the same email and password you use in the Garmin Connect app.
+    Your password is only used to sign in once and is never saved.</div>
+
+  <div class="panel" style="margin-top:24px">
+    <form class="panel-b" id="step-login" style="display:flex;flex-direction:column;gap:12px">
+      <label class="eyebrow" for="email" style="margin:0">Garmin email</label>
+      <input id="email" type="email" autocomplete="username" required style="height:44px;font-size:15px">
+      <label class="eyebrow" for="password" style="margin:6px 0 0">Garmin password</label>
+      <input id="password" type="password" autocomplete="current-password" required style="height:44px;font-size:15px">
+      <button class="btn primary" style="height:44px;justify-content:center;margin-top:8px">Connect</button>
+    </form>
+    <form class="panel-b" id="step-code" hidden style="display:flex;flex-direction:column;gap:12px">
+      <div><b style="font-weight:500">Check your email.</b>
+        <div class="muted">Garmin just sent you a code. Type it here. It can take a minute to arrive.</div></div>
+      <input id="code" inputmode="numeric" autocomplete="one-time-code" required style="height:44px;font-size:20px;letter-spacing:.3em;text-align:center">
+      <button class="btn primary" style="height:44px;justify-content:center">Finish</button>
+    </form>
+    <div class="panel-b" id="step-done" hidden>
+      <div style="font-size:18px;font-weight:500;color:var(--text)" id="done-name"></div>
+      <p class="muted">Your Garmin history is being copied over now. It takes about 10 minutes; you can close this page.
+        After that, everything updates by itself every morning.</p>
+      <a class="btn primary" href="/" style="margin-top:8px">Go to my dashboard</a>
+    </div>
+    <p class="err" id="err" hidden style="color:var(--critical);margin:0;padding:0 20px 18px"></p>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const headers = {'Content-Type': 'application/json', 'X-Requested-With': 'tricoach'};
+const $ = id => document.getElementById(id), err = $('err');
+function show(step) { for (const s of ['step-login', 'step-code', 'step-done']) $(s).hidden = s !== step; err.hidden = true; }
+async function post(url, body, btn, label) {
+  btn.disabled = true; btn.textContent = 'One moment…'; err.hidden = true;
+  try {
+    const r = await fetch(url, {method: 'POST', headers, body: JSON.stringify(body)}), j = await r.json();
+    if (j.error) throw new Error(j.error);
+    return j;
+  } catch (e) { err.textContent = e.message; err.hidden = false; return null; }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+function done(j) { $('done-name').textContent = `Connected${j.name ? ', ' + j.name : ''}.`; show('step-done'); }
+$('step-login').addEventListener('submit', async e => {
+  e.preventDefault();
+  const j = await post('/api/garmin/login', {email: $('email').value, password: $('password').value}, e.submitter || e.target.querySelector('button'), 'Connect');
+  if (!j) return;
+  $('password').value = '';
+  if (j.needs_code) { show('step-code'); $('code').focus(); } else done(j);
+});
+$('step-code').addEventListener('submit', async e => {
+  e.preventDefault();
+  const j = await post('/api/garmin/code', {code: $('code').value}, e.submitter || e.target.querySelector('button'), 'Finish');
+  if (j) done(j);
+});
+</script>
+{% endblock %}

@@ -364,6 +364,107 @@ class WebTests(unittest.TestCase):
         self.assertEqual(coach.notices(self.svc)[0]["title"], "No Garmin sync yet")
 
 
+class OnboardingTests(unittest.TestCase):
+    """Things a second, non-technical user relies on: web Garmin sign-in, Send to Garmin, their own name."""
+
+    def setUp(self):
+        import dataclasses
+        import tempfile
+
+        from starlette.testclient import TestClient
+
+        from tricoach.web import create_app
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.svc, self.fake = make_services()
+        self.svc.settings = dataclasses.replace(self.svc.settings, garmin_tokenstore=self.tmp.name + "/tokens",
+                                                athlete_name="Sara", athlete_focus="running")
+        self.client = TestClient(create_app(self.svc, run_scheduler=False), base_url="http://coach.test")
+        self.client.__enter__()
+        self.hdr = {"Authorization": "Basic " + base64.b64encode(b"ahmed:pw").decode(), "X-Requested-With": "tricoach"}
+
+    def tearDown(self):
+        self.client.__exit__(None, None, None)
+        self.tmp.cleanup()
+
+    def test_banner_until_connected_then_code_login(self):
+        from unittest import mock
+
+        from tricoach import garmin
+
+        self.assertIn("Connect your Garmin", self.client.get("/", headers=self.hdr).text)
+        self.assertEqual(self.client.get("/connect", headers=self.hdr).status_code, 200)
+        self.assertEqual(self.client.post("/api/garmin/login", json={"email": "a@b.c", "password": "x"},
+                                          headers={"Authorization": self.hdr["Authorization"]}).status_code, 403)
+
+        fake = FakeGarminLogin(needs_code=True)
+        with mock.patch.object(garmin, "_new_client", lambda email, pw: fake), \
+                mock.patch("tricoach.scheduler.run_sync") as sync:
+            r = self.client.post("/api/garmin/login", json={"email": "sara@example.com", "password": "pw1"}, headers=self.hdr)
+            self.assertEqual(r.json(), {"needs_code": True})
+            self.assertFalse(garmin.tokens_present(self.svc.settings.garmin_tokenstore))
+            r = self.client.post("/api/garmin/code", json={"code": "123456"}, headers=self.hdr)
+            self.assertEqual(r.json()["name"], "Sara Example", r.text)
+            self.assertEqual(fake.code_used, "123456")
+            sync.assert_called_once()
+        self.assertTrue(garmin.tokens_present(self.svc.settings.garmin_tokenstore))
+        self.assertNotIn("Connect your Garmin", self.client.get("/", headers=self.hdr).text)
+        # a code without a pending sign-in is a friendly error, not a crash
+        r = self.client.post("/api/garmin/code", json={"code": "1"}, headers=self.hdr)
+        self.assertIn("expired", r.json()["error"])
+
+    def test_wrong_password_message(self):
+        from unittest import mock
+
+        from tricoach import garmin
+
+        with mock.patch.object(garmin, "_new_client", lambda email, pw: FakeGarminLogin(fail=True)):
+            r = self.client.post("/api/garmin/login", json={"email": "a@b.c", "password": "nope"}, headers=self.hdr)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("didn't accept", r.json()["error"])
+
+    def test_send_draft_to_garmin(self):
+        w = self.svc.planner.create(WorkoutTests.SWIM)
+        r = self.client.post(f"/api/workouts/{w['id']}/push", json={"date": "2026-11-03"}, headers=self.hdr)
+        self.assertEqual(r.json(), {"status": "scheduled", "scheduled_date": "2026-11-03"}, r.text)
+        self.assertEqual(len(self.fake.uploaded), 1)
+        r = self.client.post(f"/api/workouts/{w['id']}/push", json={"date": "2026-11-04"}, headers=self.hdr)
+        self.assertIn("Already on the Garmin calendar", r.json()["error"])
+        self.assertIn("on garmin", self.client.get("/workouts", headers=self.hdr).text)
+
+    def test_coach_uses_athlete_name(self):
+        from tricoach import coach
+
+        prompt = coach.system_prompt(self.svc)
+        self.assertIn("You are Sara's endurance coach", prompt)
+        self.assertIn("Running is the main focus", prompt)
+        self.assertNotIn("Ahmed", prompt)
+
+
+class FakeGarminLogin:
+    """Stands in for garminconnect.Garmin(return_on_mfa=True) during the web sign-in."""
+
+    def __init__(self, needs_code=False, fail=False):
+        self.needs_code, self.fail, self.code_used = needs_code, fail, None
+        self.full_name = None
+        self.client = self
+
+    def login(self):
+        if self.fail:
+            raise type("GarminConnectAuthenticationError", (Exception,), {})("401")
+        return ("needs_mfa", {"state": 1}) if self.needs_code else (None, None)
+
+    def resume_login(self, state, code):
+        self.code_used = code
+        return None, None
+
+    def dump(self, path):
+        with open(os.path.join(path, "garmin_tokens.json"), "w") as f:
+            f.write("{}")
+
+    def _load_profile_and_settings(self):
+        self.full_name = "Sara Example"
+
 class FakeBlock:
     def __init__(self, d):
         self.__dict__.update(d)

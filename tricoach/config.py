@@ -34,6 +34,10 @@ class Settings:
     # Public hostname (e.g. coach.example.com) — allowed Host header for MCP
     public_host: str = field(default_factory=lambda: os.getenv("PUBLIC_HOST", "localhost"))
 
+    # Who this instance belongs to; the coach uses the name, and the focus sport if set (e.g. "swimming")
+    athlete_name: str = field(default_factory=lambda: os.getenv("ATHLETE_NAME", ""))
+    athlete_focus: str = field(default_factory=lambda: os.getenv("ATHLETE_FOCUS", ""))
+
     # AI coach page (chat + daily briefing). Needs ANTHROPIC_API_KEY; without it the page shows notices only.
     anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
     coach_model: str = field(default_factory=lambda: os.getenv("COACH_MODEL", "claude-opus-5-5"))

@@ -40,6 +40,10 @@ docker compose up -d --build
 
 ### Connect your Garmin account (one time)
 
+Easiest: open the dashboard and press **Connect Garmin**. It asks for the Garmin email and password (and the
+code Garmin emails, if it asks for one), saves only Garmin's refresh token, and starts the history import.
+From a terminal instead:
+
 ```bash
 docker compose run --rm app tricoach login
 ```

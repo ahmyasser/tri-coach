@@ -27,28 +27,37 @@ BETAS = ["server-side-fallback-2026-07-01"]
 MAX_TURNS = 12
 
 SYSTEM = """\
-You are Ahmed's triathlon coach and sports nutritionist, working inside their training dashboard.
+You are {who_s} endurance coach and sports nutritionist, working inside their training dashboard.
 You have tools over their Garmin history (synced daily): activities with laps, swim reps, multisport race legs,
-and daily sleep, HRV and resting heart rate. Swimming is the main focus.
+and daily sleep, HRV and resting heart rate.{focus}
 
 How you work:
 - Look at the data before answering anything about training, recovery or progress. Quote real numbers
   (dates, paces, hours, bpm) and say which period they cover.
 - Read get_athlete_profile at the start of a conversation: it holds goals, CSS, races and past decisions.
+  If it has no goal or main sport yet, ask about them early and save the answers.
 - Pool swims with quality_flags (wrong pool length) are excluded from pace stats; mention it when it matters.
 - Nutrition: periodize carbs to the day's load (rest/easy ~3-5 g/kg, moderate ~5-7, hard/long ~6-10), protein
   ~1.6-2.2 g/kg/day in 3-5 feedings, 30-90 g carbs/h in sessions over ~75 min, and recovery carbs plus 20-40 g
   protein within ~2 h. Ask for body weight if you need g/kg and don't have it.
-- When you and Ahmed agree on something (a goal, a test result, a plan change, an injury), store it with save_note
+- When you and {who} agree on something (a goal, a test result, a plan change, an injury), store it with save_note
   or set_athlete_setting so later conversations know it.
-- Workouts: create_workout only makes a DRAFT in the dashboard (Workouts page). It never reaches Garmin from here;
-  Ahmed approves and pushes drafts through Claude's tri-coach connector.
+- Workouts: create_workout only makes a DRAFT. It appears on the dashboard's Workouts page, where {who} reviews it
+  and presses "Send to Garmin" to put it on their watch. You can't send it yourself.
 - You are not a doctor. Pain that persists or gets sharper, illness, or signs of low energy availability (ongoing
   fatigue, frequent illness, falling performance, rapid weight loss): say so plainly and suggest a professional.
 
 Style: direct and brief, like a coach texting an athlete. Lead with the answer. Short paragraphs or bullets,
 numbers over adjectives, Markdown for structure (no tables wider than 5 columns). No filler, no pep talk.
+Plain words: explain any jargon (CSS, HRV, zones) in a few words the first time you use it.
 """
+
+
+def system_prompt(svc: Services) -> str:
+    name, focus = svc.settings.athlete_name, svc.settings.athlete_focus
+    return SYSTEM.format(who=name or "the athlete", who_s=f"{name}'s" if name else "the athlete's",
+                         focus=f" {focus.capitalize()} is the main focus." if focus else "")
+
 
 BRIEFING_PROMPT = """\
 Write today's coaching briefing from the data below. Format, in Markdown:
@@ -117,7 +126,7 @@ def tool_specs() -> list[dict[str, Any]]:
          _obj({"body": {"type": "string"}, "topic": {"type": "string"}}, ["body"])),
         ("list_notes", "Coaching notes, newest first, optionally filtered by topic.", _obj({"topic": {"type": "string"}, "limit": {"type": "integer"}})),
         ("list_workouts", "Planned workouts (drafts and ones on the Garmin calendar) from 7 days ago onwards.", _obj()),
-        ("create_workout", "Create a DRAFT structured workout shown on the dashboard's Workouts page. Returns a readable summary. "
+        ("create_workout", "Create a DRAFT structured workout on the dashboard's Workouts page (the athlete sends it to Garmin). Returns a summary. "
                            "Steps: warmup|interval|recovery|rest|cooldown|other with distance_m, seconds or lap_button; swim steps take "
                            "stroke, equipment and css_offset_s; one target per step (pace, hr_zone, hr_bpm, power_zone, power_w).",
          _workout_schema()),
@@ -202,7 +211,7 @@ def _client(svc: Services) -> Any:
 def _params(svc: Services) -> dict[str, Any]:
     return {
         "model": svc.settings.coach_model, "max_tokens": 64000,
-        "system": [{"type": "text", "text": SYSTEM}], "thinking": {"type": "adaptive"},
+        "system": [{"type": "text", "text": system_prompt(svc)}], "thinking": {"type": "adaptive"},
         "output_config": {"effort": "medium"}, "cache_control": {"type": "ephemeral"},
         "betas": BETAS, "fallbacks": "default",
     }
@@ -458,7 +467,7 @@ def notices(svc: Services, today: date | None = None, now: Callable[[], datetime
     drafts = db.query("SELECT id FROM workouts WHERE status = 'draft'")
     if drafts:
         out.append({"level": "info", "title": f"{len(drafts)} draft workout{'s' if len(drafts) > 1 else ''} waiting",
-                    "detail": "Approve them through Claude to send them to your watch."})
+                    "detail": "Review them on the Workouts page and press Send to Garmin."})
 
     order = {"warn": 0, "info": 1, "good": 2}
     return sorted(out, key=lambda n: order[n["level"]])

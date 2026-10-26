@@ -16,16 +16,16 @@ from .sync import SyncBusy, now_str
 from .workouts import WorkoutSpec
 
 INSTRUCTIONS = """\
-Tri-coach: Ahmed's triathlon training database (Garmin data, synced daily) plus his Garmin workout calendar.
+Tri-coach: {who} training database (Garmin data, synced daily) plus their Garmin workout calendar.
 
 How to coach with these tools:
 - Start from the data: training_overview, training_volume, swim_trend, list_activities, wellness.
-- Swimming is the main focus. Pool swims flagged with quality_flags (wrong pool length) are excluded
+{focus}- Pool swims flagged with quality_flags (wrong pool length) are excluded
   from pace stats; say so when it matters.
 - Decisions you make together go in save_note (goals, test results, plan changes) so future chats know them.
   Read get_athlete_profile first in a new conversation.
 - Workouts: create_workout makes a DRAFT and returns a readable summary. Show it and get explicit approval
-  before push_workout, which puts it on his real Garmin calendar/watch.
+  before push_workout, which puts it on their real Garmin calendar/watch.
 """
 
 SCHEMA_DOC = """Tables (read-only):
@@ -44,7 +44,9 @@ _WRITE = re.compile(r"\b(insert|update|delete|drop|alter|create|truncate|grant|r
 
 
 def build_mcp(svc: Services) -> MCPServer:
-    mcp = MCPServer("tri-coach", instructions=INSTRUCTIONS)
+    name, focus = svc.settings.athlete_name, svc.settings.athlete_focus
+    mcp = MCPServer("tri-coach", instructions=INSTRUCTIONS.format(
+        who=f"{name}'s" if name else "the athlete's", focus=f"- {focus.capitalize()} is the main focus.\n" if focus else ""))
     db = svc.db
 
     # ------------------------------------------------------------- reading

@@ -2,19 +2,49 @@
 {% block content %}
 <div class="head">
   <div><div class="eyebrow">Plan</div><h1>Workouts</h1>
-  <div class="sub">Drafts from the coach stay here until you approve them through Claude. Scheduled ones are on your Garmin calendar and watch.</div></div>
+  <div class="sub">The coach drafts workouts here. Check one, pick a day and press Send to Garmin; it shows up on your watch after its next sync.</div></div>
   <a class="btn" href="/coach">✦ Plan with the coach</a>
 </div>
 <div class="grid2">
 {% for w in rows %}
 <div class="panel">
   <div class="panel-h"><h2 style="color:var(--text);font-size:14px"><span class="sport {{ w.sport }}">{{ w.name }}</span></h2>
-    <span class="pill {{ 'accent' if w.status == 'scheduled' }}">{{ w.status }}</span></div>
-  <div class="panel-b"><div class="eyebrow">{{ w.scheduled_date or 'unscheduled' }}</div><pre>{{ w.summary }}</pre>
-  {% if w.notes %}<p class="note">{{ w.notes }}</p>{% endif %}</div>
+    <span class="pill {{ 'accent' if w.status == 'scheduled' }}" id="st-{{ w.id }}">{{ 'on garmin' if w.status == 'scheduled' else w.status }}</span></div>
+  <div class="panel-b"><div class="eyebrow">{{ w.scheduled_date or 'no day yet' }}</div><pre>{{ w.summary }}</pre>
+  {% if w.notes %}<p class="note">{{ w.notes }}</p>{% endif %}
+  {% if w.status != 'scheduled' %}
+  <div class="filters" style="margin-top:16px">
+    <input type="date" id="d-{{ w.id }}" value="{{ w.scheduled_date or '' }}" aria-label="Day for {{ w.name }}">
+    <button class="btn primary" data-push="{{ w.id }}">Send to Garmin</button>
+  </div>
+  <p class="note" id="msg-{{ w.id }}" hidden></p>
+  {% endif %}
+  </div>
 </div>
 {% else %}
 <div class="panel"><div class="empty">No planned workouts yet. Ask the coach to draft one.</div></div>
 {% endfor %}
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+const today = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+document.querySelectorAll('input[type=date]').forEach(i => { if (!i.value) i.value = today; i.min = today; });
+document.querySelectorAll('[data-push]').forEach(btn => btn.addEventListener('click', async () => {
+  const id = btn.dataset.push, msg = document.getElementById('msg-' + id);
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const r = await fetch(`/api/workouts/${id}/push`, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Requested-With': 'tricoach'},
+      body: JSON.stringify({date: document.getElementById('d-' + id).value})});
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    btn.parentElement.remove();
+    const st = document.getElementById('st-' + id); st.textContent = 'on garmin'; st.classList.add('accent');
+    msg.hidden = false; msg.textContent = `On your Garmin calendar for ${j.scheduled_date}. Sync your watch to get it.`;
+  } catch (e) {
+    msg.hidden = false; msg.style.color = 'var(--critical)'; msg.textContent = e.message;
+    btn.disabled = false; btn.textContent = 'Send to Garmin';
+  }
+}));
+</script>
 {% endblock %}

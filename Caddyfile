@@ -4,3 +4,6 @@
 	encode gzip
 	reverse_proxy app:8000
 }
+
+# More instances on the same server (e.g. a friend's): one file per site in ./sites, see sites/README.md
+import /etc/caddy/sites/*.caddy
