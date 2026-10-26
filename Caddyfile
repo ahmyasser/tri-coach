@@ -1,0 +1,6 @@
+# HTTPS (automatic Let's Encrypt certificate) in front of the app.
+# Point a DNS A record for PUBLIC_HOST at the server before starting.
+{$PUBLIC_HOST} {
+	encode gzip
+	reverse_proxy app:8000
+}

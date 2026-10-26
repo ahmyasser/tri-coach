@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ a.name }}</h1>
+<div class="grid">
+  <div class="card stat"><div class="v">{{ a.distance_m }} m</div><div class="l">{{ a.sport }} · {{ a.start }}</div></div>
+  <div class="card stat"><div class="v">{{ a.duration }}</div><div class="l">Duration</div></div>
+  <div class="card stat"><div class="v">{{ a.pace or a.speed or '-' }}</div><div class="l">Pace / speed</div></div>
+  <div class="card stat"><div class="v">{{ a.avg_hr or '-' }}</div><div class="l">Avg HR · load {{ a.training_load or '-' }}</div></div>
+</div>
+{% if a.quality_flags %}<div class="card warn">Data check: {{ a.quality_flags }}</div>{% endif %}
+<div class="card"><h2>HR zones (minutes)</h2>
+<table><tr>{% for z in a.hr_zones_min %}<th class="num">Z{{ loop.index }}</th>{% endfor %}</tr><tr>{% for z in a.hr_zones_min %}<td class="num">{{ z }}</td>{% endfor %}</tr></table></div>
+{% if a.laps %}
+<div class="card"><h2>Laps / intervals</h2>
+<table><tr><th>#</th><th class="num">Dist</th><th class="num">Time</th><th class="num">Pace / speed</th><th>Stroke</th><th class="num">Strokes/len</th><th class="num">HR</th></tr>
+{% for l in a.laps %}
+{% if l.rest %}<tr class="muted"><td>{{ loop.index }}</td><td colspan="6">rest {{ l.rest }}</td></tr>
+{% else %}<tr><td>{{ loop.index }}</td><td class="num">{{ l.distance_m }} m</td><td class="num">{{ l.time }}</td><td class="num">{{ l.pace or l.speed or '' }}</td>
+<td>{{ (l.stroke or '')|lower }}</td><td class="num">{{ l.strokes_per_length or '' }}</td><td class="num">{{ l.avg_hr or '' }}</td></tr>{% endif %}
+{% endfor %}</table></div>
+{% endif %}
+{% endblock %}

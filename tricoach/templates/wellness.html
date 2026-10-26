@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Wellness</h1>
+<div class="card"><h2>Resting HR and overnight HRV (120 days)</h2><canvas id="w"></canvas></div>
+<div class="card"><h2>Sleep</h2><canvas id="s"></canvas></div>
+{% if not rows %}<div class="card muted">No wellness data yet. It fills in when the watch records sleep/HRV.</div>{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+const rows = {{ rows | tojson_safe }};
+new Chart(document.getElementById('w'), {type:'line', data:{labels: rows.map(r => r.day), datasets:[
+  {label:'Resting HR', data: rows.map(r => r.resting_hr), borderColor: css('--bike'), yAxisID:'h', spanGaps:true},
+  {label:'HRV last night (ms)', data: rows.map(r => r.hrv_last_night), borderColor: css('--swim'), yAxisID:'v', spanGaps:true}]},
+  options:{scales:{h:{position:'left', title:{display:true,text:'bpm'}}, v:{position:'right', grid:{display:false}, title:{display:true,text:'ms'}}}}});
+new Chart(document.getElementById('s'), {type:'bar', data:{labels: rows.map(r => r.day), datasets:[
+  {label:'Sleep (h)', data: rows.map(r => r.sleep_s ? +(r.sleep_s/3600).toFixed(2) : null), backgroundColor: css('--strength')}]}});
+</script>
+{% endblock %}
