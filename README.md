@@ -124,6 +124,6 @@ The tests replay realistic Garmin responses: pool swims in 25 m and 50 m pools, 
 ## Caveats
 
 - **Unofficial API.** This uses [`python-garminconnect`](https://github.com/cyberjunky/python-garminconnect), the same sign-in flow as Garmin's mobile app, for personal use. Garmin can change things without notice. If a sync fails, `docker compose logs app` shows why. Usually the fix is `pip install -U garminconnect`, a rebuild, or another `tricoach login`. All Garmin calls are in `tricoach/garmin.py`, so moving to Garmin's official Health, Activity and Training APIs (real webhooks) later only means replacing that one file.
-- **Check the first pushed workout on your watch.** The workout JSON follows Garmin's own workout types, which were checked against your account. Swim workouts with CSS targets and pool length are the least battle-tested part, so look at the first one before trusting the rest.
+- **Workout format was tested on 26 Oct 2026.** A sample swim workout was uploaded to your Garmin account, then deleted. Garmin accepted and kept every field: pool length, stroke types, drill, pull buoy, CSS-offset target, pace target, fixed rests and the repeat that skips its last rest. Still check the first workout that reaches your watch.
 - **Security.** The MCP URL token and the Garmin token file both give access to your data, so treat them like passwords. To revoke the Garmin session, use Garmin's account security settings.
 - **Backups.** Run `docker compose exec db pg_dump -U tricoach tricoach | gzip > backup-$(date +%F).sql.gz` from a nightly cron job.
