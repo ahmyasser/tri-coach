@@ -17,11 +17,12 @@ from markupsafe import Markup
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
+from starlette.concurrency import run_in_threadpool
+from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response, StreamingResponse
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from . import analytics, scheduler
+from . import analytics, coach, scheduler
 from .mcp_server import build_mcp
 from .services import Services, build_services
 
@@ -99,12 +100,18 @@ def create_app(svc: Services | None = None, run_scheduler: bool | None = None) -
     db = svc.db
 
     def render(name: str, **ctx: Any) -> HTMLResponse:
-        return HTMLResponse(TEMPLATES.get_template(name).render(**ctx))
+        last = db.query_one("SELECT started_at, status FROM sync_runs ORDER BY started_at DESC LIMIT 1")
+        return HTMLResponse(TEMPLATES.get_template(name).render(last_sync=last, **ctx))
+
+    def same_origin(request: Request) -> bool:
+        # Basic-auth credentials ride along on cross-site POSTs; a custom header forces a CORS preflight that fails.
+        return request.headers.get("x-requested-with") == "tricoach"
 
     async def home(request: Request) -> Response:
         return render("index.html", page="home", overview=analytics.overview(db), load=analytics.load_status(db),
                       weekly=analytics.volume_by_period(db, "week", 26), monthly=analytics.volume_by_period(db, "month", 15),
-                      races=analytics.race_results(db), recent=analytics.recent_activities(db, 10))
+                      races=analytics.race_results(db), recent=analytics.recent_activities(db, 10),
+                      notices=coach.notices(svc)[:3], briefing=coach.latest_briefing(svc))
 
     async def swim(request: Request) -> Response:
         return render("swim.html", page="swim", trend=analytics.swim_trend(db, 15), best=analytics.swim_best_efforts(db),
@@ -127,6 +134,35 @@ def create_app(svc: Services | None = None, run_scheduler: bool | None = None) -
 
     async def wellness_page(request: Request) -> Response:
         return render("wellness.html", page="wellness", rows=analytics.wellness_trend(db, 120))
+
+    async def coach_page(request: Request) -> Response:
+        return render("coach.html", page="coach", notices=coach.notices(svc), briefing=coach.latest_briefing(svc),
+                      history=coach.transcript(svc, coach.current_thread(svc)), enabled=coach.enabled(svc))
+
+    async def api_coach_chat(request: Request) -> Response:
+        if not same_origin(request):
+            return PlainTextResponse("forbidden", 403)
+        text = str((await request.json()).get("message", "")).strip()[:8000]
+        if not text:
+            return JSONResponse({"error": "empty message"}, 400)
+        return StreamingResponse(coach.chat(svc, text), media_type="application/x-ndjson",
+                                 headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
+
+    async def api_coach_new(request: Request) -> Response:
+        if not same_origin(request):
+            return PlainTextResponse("forbidden", 403)
+        return JSONResponse({"thread": coach.new_thread(svc)})
+
+    async def api_coach_briefing(request: Request) -> Response:
+        if not same_origin(request):
+            return PlainTextResponse("forbidden", 403)
+        if not coach.enabled(svc):
+            return JSONResponse({"error": "Add ANTHROPIC_API_KEY to .env to generate briefings."}, 503)
+        try:
+            return JSONResponse(await run_in_threadpool(coach.generate_briefing, svc))
+        except Exception:
+            log.exception("briefing failed")
+            return JSONResponse({"error": "Couldn't write the briefing. Check the server log."}, 502)
 
     async def api_volume(request: Request) -> Response:
         period = request.query_params.get("period", "week")
@@ -172,6 +208,9 @@ def create_app(svc: Services | None = None, run_scheduler: bool | None = None) -
         routes=[
             Route("/", home), Route("/swim", swim), Route("/activities", activities),
             Route("/activities/{aid:int}", activity), Route("/workouts", workouts), Route("/wellness", wellness_page),
+            Route("/coach", coach_page), Route("/api/coach/chat", api_coach_chat, methods=["POST"]),
+            Route("/api/coach/new", api_coach_new, methods=["POST"]),
+            Route("/api/coach/briefing", api_coach_briefing, methods=["POST"]),
             Route("/api/volume", api_volume), Route("/api/swim", api_swim),
             Route("/api/sync", api_sync, methods=["GET", "POST"]), Route("/healthz", healthz),
         ],

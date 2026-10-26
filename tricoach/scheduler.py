@@ -25,6 +25,10 @@ def run_sync(svc: Services, kind: str) -> None:
         first = svc.db.query_one("SELECT COUNT(*) AS n FROM activities")["n"] == 0
         stats = svc.syncer().run(kind="backfill" if first else kind, full=first)
         log.info("sync %s finished: %s", kind, stats)
+        if kind in ("daily", "startup"):
+            from .coach import safe_briefing
+
+            safe_briefing(svc)
     except SyncBusy:
         log.info("sync already running, skipped")
     except GarminAuthMissing as exc:

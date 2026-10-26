@@ -17,6 +17,7 @@ dependencies = [
     "pydantic>=2.7",
     "psycopg[binary]>=3.2",
     "tzdata",
+    "anthropic>=2.3,<3",
 ]
 
 [project.optional-dependencies]

@@ -123,6 +123,25 @@ SCHEMA = [
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS coach_messages (
+        thread_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        PRIMARY KEY (thread_id, seq)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS coach_briefings (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        headline TEXT,
+        body TEXT NOT NULL,
+        model TEXT
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS sync_runs (
         id TEXT PRIMARY KEY,
         kind TEXT NOT NULL,

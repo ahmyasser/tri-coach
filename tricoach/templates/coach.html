@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Coach · Tri Coach{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<style>
+  .coach { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+  .side { position: sticky; top: 76px; display: flex; flex-direction: column; gap: 20px; }
+  .side .panel { margin: 0; }
+  .chat { display: flex; flex-direction: column; min-height: calc(100vh - 200px); margin: 0; }
+  .log { flex: 1; padding: 8px 24px 24px; display: flex; flex-direction: column; gap: 22px; }
+  .msg.user { align-self: flex-end; max-width: 80%; background: var(--surface-2); border: 1px solid var(--line); padding: 10px 14px;
+              border-radius: 14px 14px 4px 14px; color: var(--text); white-space: pre-wrap; }
+  .msg.bot { max-width: 100%; color: var(--text-2); line-height: 1.6; }
+  .msg.bot .who { font: 500 10.5px "Geist Mono", monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .chip { font: 11px "Geist Mono", monospace; color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 2px 9px; }
+  .chip::before { content: "↳ "; color: var(--accent); }
+  .err { color: var(--critical); font-size: 13px; }
+  .pulse { display: inline-flex; gap: 4px; }
+  .pulse i { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); animation: p 1.2s infinite ease-in-out; }
+  .pulse i:nth-child(2) { animation-delay: .15s; } .pulse i:nth-child(3) { animation-delay: .3s; }
+  @keyframes p { 0%, 80%, 100% { opacity: .2; transform: scale(.8); } 40% { opacity: 1; transform: scale(1); } }
+  .composer { position: sticky; bottom: 0; padding: 14px; border-top: 1px solid var(--line); background: var(--surface); border-radius: 0 0 14px 14px; }
+  .box { display: flex; gap: 10px; align-items: flex-end; border: 1px solid var(--line-2); border-radius: 12px; padding: 8px 8px 8px 14px; background: var(--bg); transition: border-color .15s; }
+  .box:focus-within { border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); }
+  .box textarea, .box textarea:focus { outline: none; }
+  textarea { flex: 1; border: 0; outline: 0; resize: none; background: transparent; color: var(--text); font: 14.5px/1.5 "Geist", sans-serif; max-height: 200px; padding: 6px 0; }
+  .send { width: 36px; height: 36px; padding: 0; justify-content: center; border-radius: 9px; flex: none; }
+  .hint { font: 11px "Geist Mono", monospace; color: var(--muted); margin-top: 8px; display: flex; justify-content: space-between; gap: 10px; }
+  .intro { margin: auto 0; padding: 32px 0 8px; }
+  .intro h3 { font-size: 22px; font-weight: 500; letter-spacing: -.02em; margin: 0 0 6px; color: var(--text); }
+  .prompts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-top: 20px; }
+  .prompts button { text-align: left; padding: 12px 14px; border-radius: 11px; border: 1px solid var(--line); background: transparent; color: var(--text-2);
+                    font: 13.5px "Geist", sans-serif; cursor: pointer; transition: border-color .15s, color .15s; }
+  .prompts button:hover { border-color: var(--line-2); color: var(--text); }
+  .brief-h { font-size: 15.5px; line-height: 1.45; letter-spacing: -.01em; color: var(--text); margin-bottom: 12px; }
+  .brief .md { font-size: 13.5px; color: var(--text-2); }
+  .setup code { font: 12.5px "Geist Mono", monospace; background: var(--surface-2); padding: 2px 6px; border-radius: 5px; color: var(--text); }
+  @media (max-width: 960px) {
+    .coach { grid-template-columns: 1fr; }
+    .side { position: static; order: -1; }
+    .chat { min-height: 60vh; }
+  }
+  @media (max-width: 640px) { .log { padding: 8px 16px 20px; } .msg.user { max-width: 92%; } .hint span:last-child { display: none; } }
+</style>
+{% endblock %}
+{% block content %}
+<div class="head">
+  <div><div class="eyebrow">✦ AI coach</div><h1>Coach</h1><div class="sub">Training, recovery and fuelling, answered from your own Garmin data.</div></div>
+  {% if enabled %}<button class="btn" id="new">New chat</button>{% endif %}
+</div>
+
+<div class="coach">
+  <section class="panel chat">
+    <div class="log" id="log">
+      {% if not enabled %}
+      <div class="intro setup">
+        <h3>Connect the coach</h3>
+        <p class="muted">The chat and daily briefing run on Claude and need an Anthropic API key on the server. Add this line to <code>/opt/tri-coach/.env</code>, then restart:</p>
+        <pre style="margin:14px 0">ANTHROPIC_API_KEY=sk-ant-…
+docker compose up -d app</pre>
+        <p class="muted">Notices on this page work without it.</p>
+      </div>
+      {% endif %}
+    </div>
+    {% if enabled %}
+    <form class="composer" id="form">
+      <div class="box">
+        <textarea id="input" rows="1" placeholder="Ask about training, recovery, races or food…" aria-label="Message the coach"></textarea>
+        <button class="btn primary send" id="send" aria-label="Send">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        </button>
+      </div>
+      <div class="hint"><span>Enter to send · Shift+Enter for a new line</span><span>reads your data · drafts workouts · never pushes to Garmin</span></div>
+    </form>
+    {% endif %}
+  </section>
+
+  <aside class="side">
+    <div class="panel brief">
+      <div class="panel-h"><h2>Briefing</h2>
+        <span class="meta" id="brief-meta">{% if briefing %}{{ briefing.created_at[5:16] }}{% endif %}</span></div>
+      <div class="panel-b">
+        <div id="brief">
+        {% if briefing %}<div class="brief-h">{{ briefing.headline }}</div><div class="md" data-md="{{ briefing.body }}"></div>
+        {% else %}<div class="muted">{{ 'No briefing yet. One is written after each morning sync.' if enabled else 'Briefings need the API key.' }}</div>{% endif %}
+        </div>
+        {% if enabled %}<button class="btn" id="brief-btn" style="margin-top:16px">{{ 'Refresh' if briefing else 'Write one now' }}</button>{% endif %}
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><h2>Notices</h2><span class="meta">{{ notices | length }}</span></div>
+      <div style="padding-top:6px">
+      {% for n in notices %}
+      <div class="notice {{ n.level }}"><div class="ic">{{ '!' if n.level == 'warn' else ('✓' if n.level == 'good' else 'i') }}</div><div><b>{{ n.title }}</b><span>{{ n.detail }}</span></div></div>
+      {% else %}<div class="empty">All clear.</div>{% endfor %}
+      </div>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const md = s => DOMPurify.sanitize(marked.parse(s || '', {breaks: true}));
+document.querySelectorAll('[data-md]').forEach(el => { el.innerHTML = md(el.dataset.md); });
+const log = document.getElementById('log');
+const headers = {'Content-Type': 'application/json', 'X-Requested-With': 'tricoach'};
+const esc = s => s.replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+
+function userMsg(text) {
+  const el = document.createElement('div'); el.className = 'msg user'; el.textContent = text; log.appendChild(el); return el;
+}
+function botMsg() {
+  const el = document.createElement('div'); el.className = 'msg bot';
+  el.innerHTML = '<div class="who">Coach</div><div class="chips"></div><div class="md"></div>';
+  log.appendChild(el); return el;
+}
+function chip(el, label) { el.querySelector('.chips').insertAdjacentHTML('beforeend', `<span class="chip">${esc(label)}</span>`); }
+function scrollDown() { window.scrollTo({top: document.body.scrollHeight, behavior: 'smooth'}); }
+
+{% if enabled %}
+const past = {{ history | tojson_safe }};
+const input = document.getElementById('input'), form = document.getElementById('form'), send = document.getElementById('send');
+const prompts = ['How did my last week of training go?', 'Is my freestyle pace actually improving?',
+                 'Plan my swim sessions for next week', 'What should I eat around tomorrow’s long session?'];
+function intro() {
+  log.innerHTML = `<div class="intro"><h3>What do you want to work on?</h3><div class="muted">The coach reads your activities, swim reps, sleep and HRV before it answers.</div>
+    <div class="prompts">${prompts.map(p => `<button type="button">${esc(p)}</button>`).join('')}</div></div>`;
+  log.querySelectorAll('.prompts button').forEach(b => b.addEventListener('click', () => ask(b.textContent)));
+}
+if (past.length) {
+  for (const m of past) {
+    if (m.role === 'user') { userMsg(m.text); continue; }
+    const el = botMsg(); m.tools.forEach(t => chip(el, t)); el.querySelector('.md').innerHTML = md(m.text);
+  }
+  requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight));
+} else intro();
+
+let busy = false;
+async function ask(text) {
+  text = text.trim();
+  if (!text || busy) return;
+  busy = true; send.disabled = true; input.value = ''; grow();
+  log.querySelector('.intro')?.remove();
+  userMsg(text);
+  const el = botMsg(), body = el.querySelector('.md'), who = el.querySelector('.who');
+  who.insertAdjacentHTML('beforeend', '<span class="pulse"><i></i><i></i><i></i></span>');
+  scrollDown();
+  let acc = '', queued = false;
+  const paint = () => { if (queued) return; queued = true; requestAnimationFrame(() => { body.innerHTML = md(acc); queued = false; }); };
+  try {
+    const res = await fetch('/api/coach/chat', {method: 'POST', headers, body: JSON.stringify({message: text})});
+    if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const {value, done} = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, {stream: true});
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 1);
+        if (!line) continue;
+        const ev = JSON.parse(line);
+        if (ev.t === 'text') { acc += ev.v; paint(); }
+        else if (ev.t === 'tool') { chip(el, ev.v); if (acc && !acc.endsWith('\n\n')) acc += '\n\n'; }
+        else if (ev.t === 'error') { body.insertAdjacentHTML('beforeend', `<p class="err">${esc(ev.v)}</p>`); }
+      }
+    }
+  } catch (e) {
+    body.insertAdjacentHTML('beforeend', `<p class="err">Connection dropped (${esc(String(e.message || e))}). Reload to see what was saved.</p>`);
+  } finally {
+    who.querySelector('.pulse')?.remove();
+    busy = false; send.disabled = false; input.focus();
+  }
+}
+function grow() { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 200) + 'px'; }
+input.addEventListener('input', grow);
+input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); ask(input.value); } });
+form.addEventListener('submit', e => { e.preventDefault(); ask(input.value); });
+document.getElementById('new').addEventListener('click', async () => {
+  if (busy) return;
+  await fetch('/api/coach/new', {method: 'POST', headers}); intro(); input.focus();
+});
+document.getElementById('brief-btn').addEventListener('click', async e => {
+  const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Writing…';
+  try {
+    const r = await fetch('/api/coach/briefing', {method: 'POST', headers}), j = await r.json();
+    if (j.error) throw new Error(j.error);
+    document.getElementById('brief').innerHTML = `<div class="brief-h">${esc(j.headline)}</div><div class="md">${md(j.body)}</div>`;
+    document.getElementById('brief-meta').textContent = j.created_at.slice(5, 16);
+    btn.textContent = 'Refresh';
+  } catch (err) {
+    document.getElementById('brief').insertAdjacentHTML('beforeend', `<p class="err">${esc(err.message)}</p>`); btn.textContent = 'Try again';
+  } finally { btn.disabled = false; }
+});
+{% endif %}
+</script>
+{% endblock %}

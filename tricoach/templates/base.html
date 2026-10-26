@@ -3,56 +3,250 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
 <title>{% block title %}Tri Coach{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>try { const t = localStorage.getItem('tc-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
-  :root { --bg:#f7f7f5; --card:#fff; --text:#1d1f23; --muted:#6b7078; --line:#e4e4e0;
-          --swim:#2a78d6; --bike:#d9822b; --run:#1f9d62; --strength:#8a5cd1; --other:#8a8f98; --warn:#b54708; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#141518; --card:#1c1e22; --text:#e8e8e6; --muted:#9a9ea6; --line:#2c2f35; --warn:#f79009; }
+  :root {
+    color-scheme: light;
+    --bg: #f5f5f3; --surface: #ffffff; --surface-2: #f0f0ed; --line: #e6e6e2; --line-2: #d6d6d1;
+    --text: #0d0e10; --text-2: #4a4e55; --muted: #80858d;
+    --accent: #3f6212; --accent-ink: #ffffff; --accent-soft: rgba(63, 98, 18, .08);
+    --swim: #2a78d6; --bike: #eb6834; --run: #1baf7a; --strength: #eda100; --other: #9a9fa6; --swim-2: #e87ba4;
+    --good: #0ca30c; --warning: #b77900; --critical: #d03b3b;
+    --grid-dot: rgba(13, 14, 16, .06);
+    --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px -12px rgba(0,0,0,.08);
   }
-  * { box-sizing:border-box; }
-  body { margin:0; font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); }
-  header { display:flex; gap:20px; align-items:center; padding:14px 20px; border-bottom:1px solid var(--line); background:var(--card); flex-wrap:wrap; }
-  header b { font-size:16px; margin-right:12px; }
-  header a { color:var(--muted); text-decoration:none; }
-  header a.on { color:var(--text); font-weight:600; }
-  main { max-width:1100px; margin:0 auto; padding:20px 16px 60px; }
-  h1 { font-size:22px; margin:6px 0 16px; } h2 { font-size:16px; margin:0 0 12px; }
-  .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); margin-bottom:16px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; overflow-x:auto; }
-  .stat .v { font-size:26px; font-weight:650; } .stat .l { color:var(--muted); font-size:13px; }
-  table { border-collapse:collapse; width:100%; font-size:14px; }
-  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
-  th { color:var(--muted); font-weight:500; }
-  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
-  .muted { color:var(--muted); } .warn { color:var(--warn); }
-  .pill { display:inline-block; padding:1px 8px; border-radius:20px; font-size:12px; border:1px solid var(--line); }
-  .swim{color:var(--swim)} .bike{color:var(--bike)} .run{color:var(--run)}
-  canvas { max-height:300px; }
-  a { color:var(--swim); }
-  pre { white-space:pre-wrap; font-size:13px; margin:0; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #08090b; --surface: #101215; --surface-2: #15181c; --line: #1d2025; --line-2: #2a2e35;
+      --text: #eceef1; --text-2: #a4aab3; --muted: #6c727c;
+      --accent: #c6f24e; --accent-ink: #0b0d05; --accent-soft: rgba(198, 242, 78, .08);
+      --swim: #3987e5; --bike: #d95926; --run: #199e70; --strength: #c98500; --other: #6c727c; --swim-2: #d55181;
+      --good: #2fbf4f; --warning: #fab219; --critical: #e66767;
+      --grid-dot: rgba(255, 255, 255, .045);
+      --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 12px 32px -16px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #08090b; --surface: #101215; --surface-2: #15181c; --line: #1d2025; --line-2: #2a2e35;
+    --text: #eceef1; --text-2: #a4aab3; --muted: #6c727c;
+    --accent: #c6f24e; --accent-ink: #0b0d05; --accent-soft: rgba(198, 242, 78, .08);
+    --swim: #3987e5; --bike: #d95926; --run: #199e70; --strength: #c98500; --other: #6c727c; --swim-2: #d55181;
+    --good: #2fbf4f; --warning: #fab219; --critical: #e66767;
+    --grid-dot: rgba(255, 255, 255, .045);
+    --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 12px 32px -16px rgba(0,0,0,.6);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font: 400 14.5px/1.5 "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased; font-feature-settings: "ss01", "cv11";
+    background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+    background-size: 22px 22px; background-attachment: fixed;
+  }
+  .mono, td.num, th.num, .tile .v, .kbd { font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
+  a { color: inherit; text-decoration: none; }
+  a:hover { color: var(--accent); }
+  ::selection { background: var(--accent); color: var(--accent-ink); }
+
+  /* top bar */
+  .bar { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(14px) saturate(140%); -webkit-backdrop-filter: blur(14px) saturate(140%);
+         background: color-mix(in srgb, var(--bg) 78%, transparent); border-bottom: 1px solid var(--line); }
+  .bar-in { max-width: 1180px; margin: 0 auto; padding: 0 20px; height: 56px; display: flex; align-items: center; gap: 28px; }
+  .brand { display: flex; align-items: center; gap: 10px; font: 500 13px "Geist Mono", monospace; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; }
+  .brand i { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--text); position: relative; display: inline-block; }
+  .brand i::after { content: ""; position: absolute; inset: 4px; border-radius: 2px; background: var(--accent); }
+  nav { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; flex: 1; }
+  nav::-webkit-scrollbar { display: none; }
+  nav a { padding: 6px 12px; border-radius: 8px; color: var(--muted); font-size: 13.5px; white-space: nowrap; transition: color .15s, background .15s; }
+  nav a:hover { color: var(--text); background: var(--surface-2); }
+  nav a.on { color: var(--text); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-2); }
+  nav a.coach-link::before { content: "✦ "; color: var(--accent); }
+  .bar-right { display: flex; align-items: center; gap: 10px; }
+  .sync { display: flex; align-items: center; gap: 8px; font: 12px "Geist Mono", monospace; color: var(--muted); white-space: nowrap; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 18%, transparent); flex: none; }
+  .dot.bad { background: var(--critical); box-shadow: 0 0 0 3px color-mix(in srgb, var(--critical) 18%, transparent); }
+  .icon-btn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; }
+  .icon-btn:hover { color: var(--text); border-color: var(--line-2); }
+
+  /* layout */
+  main { max-width: 1180px; margin: 0 auto; padding: 36px 20px 80px; }
+  .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 28px; flex-wrap: wrap; }
+  .eyebrow { font: 500 11px "Geist Mono", monospace; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  h1 { font-size: 30px; line-height: 1.15; font-weight: 500; letter-spacing: -.025em; margin: 0; }
+  h2 { font-size: 13px; font-weight: 500; margin: 0; color: var(--text-2); letter-spacing: .01em; }
+  .sub { color: var(--muted); margin-top: 6px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 1px; background: var(--line);
+           border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin-bottom: 20px; box-shadow: var(--shadow); }
+  .tile { background: var(--surface); padding: 18px 20px 20px; min-width: 0; }
+  .tile .l { font: 500 10.5px "Geist Mono", monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  .tile .v { font-size: 28px; font-weight: 400; letter-spacing: -.03em; margin-top: 10px; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile .v small { font-size: 13px; color: var(--muted); letter-spacing: 0; margin-left: 4px; }
+  .tile .n { color: var(--muted); font-size: 12.5px; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 20px; }
+  .grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 20px; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 20px; box-shadow: var(--shadow); min-width: 0; }
+  .grid2 > .panel, .grid3 > .panel { margin-bottom: 0; }
+  .grid2, .grid3 { margin-bottom: 20px; }
+  .panel-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px 0; flex-wrap: wrap; }
+  .panel-h .meta { font: 11.5px "Geist Mono", monospace; color: var(--muted); }
+  .panel-b { padding: 16px 20px 20px; }
+  .panel-b.flush { padding: 8px 0 4px; overflow-x: auto; }
+  .chart { position: relative; height: 260px; }
+  .chart.sm { height: 170px; }
+  .note { color: var(--muted); font-size: 12.5px; margin: 12px 0 0; }
+
+  /* legend */
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-2); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+  /* tables */
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { text-align: left; padding: 10px 12px; white-space: nowrap; }
+  th { font: 500 10.5px "Geist Mono", monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); }
+  td { border-bottom: 1px solid var(--line); color: var(--text-2); }
+  tr:last-child td { border-bottom: 0; }
+  tbody tr { transition: background .12s; }
+  tbody tr:hover { background: var(--surface-2); }
+  td.num, th.num { text-align: right; }
+  th:first-child, td:first-child { padding-left: 20px; } th:last-child, td:last-child { padding-right: 20px; }
+  td a { color: var(--text); }
+  td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+
+  .sport { display: inline-flex; align-items: center; gap: 7px; text-transform: capitalize; color: var(--text-2); }
+  .sport::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--c, var(--other)); }
+  .sport.swim { --c: var(--swim); } .sport.bike { --c: var(--bike); } .sport.run { --c: var(--run); }
+  .sport.strength { --c: var(--strength); } .sport.multisport { --c: var(--text); }
+  .pill { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 99px; font: 500 11px "Geist Mono", monospace;
+          letter-spacing: .04em; border: 1px solid var(--line-2); color: var(--text-2); text-transform: lowercase; }
+  .pill.accent { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--accent-soft); }
+  .flag { color: var(--warning); font: 11.5px "Geist Mono", monospace; }
+  .muted { color: var(--muted); }
+  .empty { padding: 28px 20px; color: var(--muted); text-align: center; }
+
+  /* controls */
+  .btn { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--line-2);
+         background: var(--surface); color: var(--text); font: 500 13px "Geist", sans-serif; cursor: pointer; transition: border-color .15s, background .15s; }
+  .btn:hover { border-color: var(--muted); color: var(--text); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  input, select { height: 34px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); font: 13px "Geist", sans-serif; }
+  input:focus, select:focus, textarea:focus, .btn:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; }
+  .filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+  /* notices */
+  .notice { display: grid; grid-template-columns: 22px 1fr; gap: 10px; padding: 14px 20px; border-top: 1px solid var(--line); }
+  .notice:first-child { border-top: 0; }
+  .notice .ic { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font: 600 12px "Geist Mono", monospace; }
+  .notice.warn .ic { color: var(--warning); background: color-mix(in srgb, var(--warning) 14%, transparent); }
+  .notice.info .ic { color: var(--text-2); background: var(--surface-2); }
+  .notice.good .ic { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+  .notice b { font-weight: 500; display: block; color: var(--text); }
+  .notice span { color: var(--muted); font-size: 13px; }
+
+  pre { white-space: pre-wrap; font: 12.5px/1.6 "Geist Mono", monospace; margin: 0; color: var(--text-2); }
+  .md p { margin: 0 0 10px; } .md p:last-child { margin-bottom: 0; }
+  .md ul, .md ol { margin: 4px 0 12px; padding-left: 20px; } .md li { margin: 3px 0; }
+  .md strong { font-weight: 600; color: var(--text); }
+  .md code { font: 12.5px "Geist Mono", monospace; background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
+  .md table { margin: 8px 0 12px; font-size: 13px; } .md th, .md td { padding: 6px 10px; }
+  .md h1, .md h2, .md h3 { font-size: 14px; font-weight: 600; color: var(--text); margin: 14px 0 6px; }
+
+  @media (max-width: 900px) { .bar-in { gap: 16px; } .brand span, .sync span { display: none; } }
+  @media (max-width: 640px) {
+    .bar-in { gap: 10px; padding: 0 16px; }
+    main { padding: 24px 16px 64px; }
+    h1 { font-size: 24px; }
+    .tile { padding: 14px 16px 16px; } .tile .v { font-size: 22px; }
+    th:first-child, td:first-child { padding-left: 16px; } th:last-child, td:last-child { padding-right: 16px; }
+    .panel-h { padding: 14px 16px 0; } .panel-b { padding: 14px 16px 16px; }
+  }
 </style>
+{% block head %}{% endblock %}
 </head>
 <body>
-<header>
-  <b>Tri Coach</b>
-  <a href="/" class="{{ 'on' if page=='home' }}">Overview</a>
-  <a href="/swim" class="{{ 'on' if page=='swim' }}">Swim</a>
-  <a href="/activities" class="{{ 'on' if page=='activities' }}">Activities</a>
-  <a href="/workouts" class="{{ 'on' if page=='workouts' }}">Workouts</a>
-  <a href="/wellness" class="{{ 'on' if page=='wellness' }}">Wellness</a>
-</header>
+<header class="bar"><div class="bar-in">
+  <a class="brand" href="/"><i></i><span>Tri Coach</span></a>
+  <nav>
+    <a href="/" class="{{ 'on' if page=='home' }}">Overview</a>
+    <a href="/coach" class="coach-link {{ 'on' if page=='coach' }}">Coach</a>
+    <a href="/swim" class="{{ 'on' if page=='swim' }}">Swim</a>
+    <a href="/activities" class="{{ 'on' if page=='activities' }}">Activities</a>
+    <a href="/workouts" class="{{ 'on' if page=='workouts' }}">Workouts</a>
+    <a href="/wellness" class="{{ 'on' if page=='wellness' }}">Wellness</a>
+  </nav>
+  <div class="bar-right">
+    <div class="sync" title="Last Garmin sync">
+      <i class="dot {{ 'bad' if not last_sync or last_sync.status not in ('ok', 'running') }}"></i>
+      <span>{% if last_sync %}{{ last_sync.started_at[5:16] }}{% else %}not synced{% endif %}</span>
+    </div>
+    <button class="icon-btn" id="theme" aria-label="Toggle theme" title="Toggle theme">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+    </button>
+  </div>
+</div></header>
 <main>
 {% block content %}{% endblock %}
 </main>
 <script>
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const SPORTS = {swim: '--swim', bike: '--bike', run: '--run', strength: '--strength', other: '--other'};
+  const fmtPace = s => s == null ? '' : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+  document.getElementById('theme').addEventListener('click', () => {
+    const dark = document.documentElement.dataset.theme
+      ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+    try { localStorage.setItem('tc-theme', document.documentElement.dataset.theme); } catch (e) {}
+    location.reload();
+  });
   if (window.Chart) {
     Chart.defaults.color = css('--muted');
     Chart.defaults.borderColor = css('--line');
-    Chart.defaults.font.family = 'system-ui, sans-serif';
+    Chart.defaults.font.family = '"Geist", system-ui, sans-serif';
+    Chart.defaults.font.size = 11.5;
+    Chart.defaults.maintainAspectRatio = false;
+    Chart.defaults.plugins.legend.display = false;
+    Chart.defaults.scale.grid.color = css('--line');
+    Chart.defaults.scale.grid.drawTicks = false;
+    Chart.defaults.scale.border = {display: false};
+    Chart.defaults.scale.ticks.padding = 8;
+    Chart.defaults.elements.line.borderWidth = 2;
+    Chart.defaults.elements.line.tension = 0.3;
+    Chart.defaults.elements.point.radius = 0;
+    Chart.defaults.elements.point.hoverRadius = 5;
+    Chart.defaults.elements.point.hoverBorderWidth = 2;
+    Chart.defaults.elements.point.hoverBorderColor = css('--surface');
+    Chart.defaults.elements.bar.borderRadius = 3;
+    Chart.defaults.interaction = {mode: 'index', intersect: false};
+    Object.assign(Chart.defaults.plugins.tooltip, {
+      backgroundColor: css('--surface-2'), titleColor: css('--text'), bodyColor: css('--text-2'),
+      borderColor: css('--line-2'), borderWidth: 1, padding: 10, cornerRadius: 8, boxPadding: 4,
+      usePointStyle: true, titleFont: {family: '"Geist Mono", monospace', size: 11, weight: 500},
+      bodyFont: {family: '"Geist Mono", monospace', size: 11.5},
+    });
+    // Vertical crosshair under the hovered index (line and bar charts).
+    Chart.register({id: 'crosshair', afterDatasetsDraw(chart) {
+      const a = chart.tooltip?.getActiveElements?.() || [];
+      if (!a.length) return;
+      const x = a[0].element.x, {top, bottom} = chart.chartArea, ctx = chart.ctx;
+      ctx.save(); ctx.strokeStyle = css('--line-2'); ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke(); ctx.restore();
+    }});
   }
+  const legend = (el, items) => { el.innerHTML = items.map(([label, color]) => `<span><i style="background:${color}"></i>${label}</span>`).join(''); };
 </script>
 {% block scripts %}{% endblock %}
 </body>

@@ -1,42 +1,60 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Swim</h1>
-<div class="grid">
-  <div class="card stat"><div class="v">{{ best.css.pace_100m if best.css else '-' }}</div><div class="l">CSS /100 m{% if best.css %} · {{ best.css.source }}{% endif %}</div></div>
+<div class="head">
+  <div><div class="eyebrow">Main focus</div><h1>Swim</h1><div class="sub">Freestyle pace, efficiency and best efforts from every pool and open-water session.</div></div>
+</div>
+
+<div class="tiles">
+  <div class="tile"><div class="l">CSS · per 100 m</div><div class="v">{{ best.css.pace_100m if best.css else '–' }}</div><div class="n">{{ best.css.source if best.css else 'not set yet' }}</div></div>
   {% for k in ['100','200','400'] %}
-  <div class="card stat"><div class="v">{{ best[k][0].time if best[k] else '-' }}</div>
-    <div class="l">Best {{ k }} m free{% if best[k] %} · {{ best[k][0].pace_100m }}/100 · {{ best[k][0].date }}{% endif %}</div></div>
+  <div class="tile"><div class="l">Best {{ k }} m free</div><div class="v">{{ best[k][0].time if best[k] else '–' }}</div>
+    <div class="n">{% if best[k] %}{{ best[k][0].pace_100m }}/100 · {{ best[k][0].date }}{% else %}no reps yet{% endif %}</div></div>
   {% endfor %}
 </div>
 
-<div class="card"><h2>Typical freestyle rep pace (median of 100–400 m reps, per 100 m)</h2><canvas id="pace"></canvas>
-<p class="muted">Lower is faster. Glitchy laps (merged/split lengths) and sessions with a wrong pool length are left out.</p></div>
-<div class="card"><h2>Strokes per length</h2><canvas id="strokes"></canvas></div>
+<div class="grid2">
+  <div class="panel">
+    <div class="panel-h"><h2>Rep pace · median of 100–400 m freestyle reps</h2><div class="legend" id="pace-legend"></div></div>
+    <div class="panel-b"><div class="chart"><canvas id="pace" aria-label="Median freestyle rep pace per month"></canvas></div>
+    <p class="note">Per 100 m, faster is higher. Glitchy laps and swims with a wrong pool length are left out.</p></div>
+  </div>
+  <div class="panel">
+    <div class="panel-h"><h2>Strokes per length</h2><div class="legend" id="strokes-legend"></div></div>
+    <div class="panel-b"><div class="chart"><canvas id="strokes" aria-label="Average strokes per length per month"></canvas></div>
+    <p class="note">Fewer strokes at the same pace means a longer, more efficient stroke.</p></div>
+  </div>
+</div>
 
-<div class="card"><h2>By month</h2>
-<table><tr><th>Month</th><th>Venue</th><th class="num">Sessions</th><th class="num">km</th><th class="num">Avg pace</th><th class="num">Rep pace</th><th class="num">SWOLF</th><th class="num">Strokes/len</th></tr>
-{% for r in trend %}<tr><td>{{ r.month }}</td><td>{{ r.venue }}</td><td class="num">{{ r.sessions }}</td><td class="num">{{ r.km }}</td>
-<td class="num">{{ r.avg_pace_100m }}</td><td class="num">{{ r.median_rep_pace_100m }}</td><td class="num">{{ r.avg_swolf or '-' }}</td>
-<td class="num">{{ r.avg_strokes_per_length or '-' }}</td></tr>{% endfor %}</table></div>
+<div class="panel">
+  <div class="panel-h"><h2>By month</h2><span class="meta">{{ trend | length }} rows</span></div>
+  <div class="panel-b flush"><table><thead><tr><th>Month</th><th>Venue</th><th class="num">Sessions</th><th class="num">km</th><th class="num">Avg pace</th><th class="num">Rep pace</th><th class="num">SWOLF</th><th class="num">Strokes/len</th></tr></thead><tbody>
+  {% for r in trend %}<tr><td class="mono">{{ r.month }}</td><td>{{ r.venue }}</td><td class="num">{{ r.sessions }}</td><td class="num">{{ r.km }}</td>
+  <td class="num">{{ r.avg_pace_100m }}</td><td class="num">{{ r.median_rep_pace_100m }}</td><td class="num">{{ r.avg_swolf or '–' }}</td>
+  <td class="num">{{ r.avg_strokes_per_length or '–' }}</td></tr>{% else %}<tr><td colspan="8" class="empty">No swims yet.</td></tr>{% endfor %}</tbody></table></div>
+</div>
 
-<div class="card"><h2>Swims, last 60 days</h2>
-<table><tr><th>When</th><th>Name</th><th class="num">Dist</th><th class="num">Time</th><th class="num">Pace</th><th class="num">HR</th><th></th></tr>
-{% for a in recent %}<tr><td>{{ a.start[:16] }}</td><td><a href="/activities/{{ a.activity_id }}">{{ a.name }}</a></td>
-<td class="num">{{ a.distance_m }} m</td><td class="num">{{ a.duration }}</td><td class="num">{{ a.pace or '' }}</td><td class="num">{{ a.avg_hr or '' }}</td>
-<td class="warn">{{ a.quality_flags or '' }}</td></tr>{% endfor %}</table></div>
+<div class="panel">
+  <div class="panel-h"><h2>Swims · last 60 days</h2><span class="meta">{{ recent | length }}</span></div>
+  <div class="panel-b flush"><table><thead><tr><th>When</th><th>Name</th><th class="num">Dist</th><th class="num">Time</th><th class="num">Pace</th><th class="num">HR</th><th></th></tr></thead><tbody>
+  {% for a in recent %}<tr><td class="mono">{{ a.start[5:16] }}</td><td class="name"><a href="/activities/{{ a.activity_id }}">{{ a.name }}</a></td>
+  <td class="num">{{ '{:,}'.format(a.distance_m) }} m</td><td class="num">{{ a.duration }}</td><td class="num">{{ a.pace or '' }}</td><td class="num">{{ a.avg_hr or '' }}</td>
+  <td class="flag">{{ a.quality_flags or '' }}</td></tr>{% else %}<tr><td colspan="7" class="empty">No swims in the last 60 days.</td></tr>{% endfor %}</tbody></table></div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 const trend = {{ trend | tojson_safe }};
 const months = [...new Set(trend.map(r => r.month))].sort();
-const venues = [...new Set(trend.map(r => r.venue))];
-const colors = {'25 m pool': css('--swim'), '50 m pool': '#7a5af5', 'open water': css('--run')};
-const series = (key) => venues.map(v => ({label: v, spanGaps: true, borderColor: colors[v] || css('--other'), backgroundColor: colors[v] || css('--other'),
+const pools = [['25 m pool', css('--swim')], ['50 m pool', css('--swim-2')]].filter(([v]) => trend.some(r => r.venue === v));
+const series = key => pools.map(([v, c]) => ({label: v, spanGaps: true, borderColor: c, backgroundColor: c, pointBackgroundColor: c,
   data: months.map(m => (trend.find(r => r.month === m && r.venue === v) || {})[key] ?? null)}));
-const fmt = s => s == null ? '' : `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}`;
-new Chart(document.getElementById('pace'), {type:'line', data:{labels: months, datasets: series('median_rep_pace_s').filter(d => d.label !== 'open water')},
-  options:{scales:{y:{reverse:true, ticks:{callback: fmt}}}, plugins:{tooltip:{callbacks:{label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}/100m`}}}}});
-new Chart(document.getElementById('strokes'), {type:'line', data:{labels: months, datasets: series('avg_strokes_per_length').filter(d => d.label !== 'open water')}});
+legend(document.getElementById('pace-legend'), pools); legend(document.getElementById('strokes-legend'), pools);
+const x = {grid: {display: false}, ticks: {maxRotation: 0, autoSkipPadding: 12, callback(v) { return this.getLabelForValue(v).slice(2); }}};
+new Chart(document.getElementById('pace'), {type: 'line', data: {labels: months, datasets: series('median_rep_pace_s')},
+  options: {scales: {x, y: {reverse: true, ticks: {callback: fmtPace, maxTicksLimit: 5}}},
+    plugins: {tooltip: {callbacks: {label: c => ` ${c.dataset.label}  ${fmtPace(c.parsed.y)}/100m`}}}}});
+new Chart(document.getElementById('strokes'), {type: 'line', data: {labels: months, datasets: series('avg_strokes_per_length')},
+  options: {scales: {x, y: {ticks: {maxTicksLimit: 5}}}, plugins: {tooltip: {callbacks: {label: c => ` ${c.dataset.label}  ${c.parsed.y.toFixed(1)}`}}}}});
 </script>
 {% endblock %}

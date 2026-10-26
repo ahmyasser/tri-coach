@@ -1,14 +1,20 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Workouts</h1>
-<p class="muted">Created with Claude through the MCP connector. Drafts stay here until you approve them; scheduled ones are on your Garmin calendar and sync to the watch.</p>
+<div class="head">
+  <div><div class="eyebrow">Plan</div><h1>Workouts</h1>
+  <div class="sub">Drafts from the coach stay here until you approve them through Claude. Scheduled ones are on your Garmin calendar and watch.</div></div>
+  <a class="btn" href="/coach">✦ Plan with the coach</a>
+</div>
+<div class="grid2">
 {% for w in rows %}
-<div class="card">
-  <h2>{{ w.scheduled_date or 'unscheduled' }} · {{ w.name }} <span class="pill">{{ w.status }}</span></h2>
-  <pre>{{ w.summary }}</pre>
-  {% if w.notes %}<p class="muted">{{ w.notes }}</p>{% endif %}
+<div class="panel">
+  <div class="panel-h"><h2 style="color:var(--text);font-size:14px"><span class="sport {{ w.sport }}">{{ w.name }}</span></h2>
+    <span class="pill {{ 'accent' if w.status == 'scheduled' }}">{{ w.status }}</span></div>
+  <div class="panel-b"><div class="eyebrow">{{ w.scheduled_date or 'unscheduled' }}</div><pre>{{ w.summary }}</pre>
+  {% if w.notes %}<p class="note">{{ w.notes }}</p>{% endif %}</div>
 </div>
 {% else %}
-<div class="card muted">No planned workouts yet.</div>
+<div class="panel"><div class="empty">No planned workouts yet. Ask the coach to draft one.</div></div>
 {% endfor %}
+</div>
 {% endblock %}

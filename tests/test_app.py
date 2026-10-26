@@ -309,6 +309,109 @@ class WebTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.text)
         self.assertIn("swim_trend", r.text)
 
+    def test_coach_page_and_csrf(self):
+        r = self.client.get("/coach", headers=self.auth)
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("ANTHROPIC_API_KEY", r.text)  # no key: setup instructions instead of the chat box
+        self.assertEqual(self.client.post("/api/coach/chat", json={"message": "hi"}, headers=self.auth).status_code, 403)
+        r = self.client.post("/api/coach/chat", json={"message": "hi"}, headers={**self.auth, "X-Requested-With": "tricoach"})
+        self.assertIn("ANTHROPIC_API_KEY", r.text)
+        self.assertEqual(self.client.post("/api/coach/briefing", headers={**self.auth, "X-Requested-With": "tricoach"}).status_code, 503)
+
+    def test_coach_chat_with_tools(self):
+        fake = FakeLLM([
+            [{"type": "tool_use", "id": "tu1", "name": "training_overview", "input": {}}],
+            [{"type": "text", "text": "Solid week. **Swim more.**"}],
+        ])
+        self.svc.llm_factory = lambda: fake
+        hdr = {**self.auth, "X-Requested-With": "tricoach"}
+        r = self.client.post("/api/coach/chat", json={"message": "How was my week?"}, headers=hdr)
+        events = [json.loads(line) for line in r.text.splitlines()]
+        self.assertEqual([e["t"] for e in events], ["tool", "text", "done"])
+        self.assertEqual(len(fake.calls), 2)
+        second = fake.calls[1]
+        self.assertEqual(second["fallbacks"], "default")
+        self.assertEqual(second["messages"][-1]["content"][0]["type"], "tool_result")
+        self.assertIn("by_sport", second["messages"][-1]["content"][0]["content"])
+        self.assertTrue(all(t["eager_input_streaming"] for t in second["tools"]))
+
+        from tricoach import coach
+        history = coach.transcript(self.svc, coach.current_thread(self.svc))
+        self.assertEqual(history[0], {"role": "user", "text": "How was my week?"})
+        self.assertEqual(history[1]["tools"], ["Checked training overview"])
+        self.assertIn("Swim more", history[1]["text"])
+        page = self.client.get("/coach", headers=self.auth).text
+        self.assertIn("Swim more", page)
+
+        # a new chat starts from an empty history; the old thread stays in the database
+        self.client.post("/api/coach/new", headers=hdr)
+        self.assertEqual(coach.transcript(self.svc, coach.current_thread(self.svc)), [])
+
+    def test_coach_briefing_and_notices(self):
+        from tricoach import coach
+
+        fake = FakeLLM([[{"type": "text", "text": "Recovery week: keep it easy.\n\n**Last 7 days**\n- 2 swims"}]])
+        self.svc.llm_factory = lambda: fake
+        r = self.client.post("/api/coach/briefing", headers={**self.auth, "X-Requested-With": "tricoach"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["headline"], "Recovery week: keep it easy.")
+        self.assertIn("Recovery week", self.client.get("/", headers=self.auth).text)
+        self.assertNotIn("tools", fake.calls[0])
+
+        for n in coach.notices(self.svc):
+            self.assertIn(n["level"], ("warn", "info", "good"))
+        self.svc.db.execute("DELETE FROM sync_runs")
+        self.assertEqual(coach.notices(self.svc)[0]["title"], "No Garmin sync yet")
+
+
+class FakeBlock:
+    def __init__(self, d):
+        self.__dict__.update(d)
+        self._d = d
+
+    def model_dump(self, **_):
+        return dict(self._d)
+
+
+class FakeLLM:
+    """Stands in for anthropic.Anthropic: each beta.messages.stream() call plays the next scripted reply."""
+
+    def __init__(self, replies):
+        self.replies, self.calls = list(replies), []
+        self.beta = self
+        self.messages = self
+
+    def stream(self, **kw):
+        import copy
+
+        self.calls.append(copy.deepcopy(kw))
+        return FakeStream([FakeBlock(b) for b in self.replies.pop(0)])
+
+
+class FakeStream:
+    def __init__(self, blocks):
+        self.blocks = blocks
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def __iter__(self):
+        from types import SimpleNamespace as NS
+
+        for b in self.blocks:
+            yield NS(type="content_block_start", content_block=b)
+            if b.type == "text":
+                yield NS(type="text", text=b.text)
+
+    def get_final_message(self):
+        from types import SimpleNamespace as NS
+
+        tool = any(b.type == "tool_use" for b in self.blocks)
+        return NS(content=self.blocks, model="fake", stop_reason="tool_use" if tool else "end_turn")
+
 
 if __name__ == "__main__":
     unittest.main()

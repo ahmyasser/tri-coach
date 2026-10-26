@@ -1,22 +1,41 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>{{ a.name }}</h1>
-<div class="grid">
-  <div class="card stat"><div class="v">{{ a.distance_m }} m</div><div class="l">{{ a.sport }} · {{ a.start }}</div></div>
-  <div class="card stat"><div class="v">{{ a.duration }}</div><div class="l">Duration</div></div>
-  <div class="card stat"><div class="v">{{ a.pace or a.speed or '-' }}</div><div class="l">Pace / speed</div></div>
-  <div class="card stat"><div class="v">{{ a.avg_hr or '-' }}</div><div class="l">Avg HR · load {{ a.training_load or '-' }}</div></div>
+<div class="head">
+  <div><div class="eyebrow"><a href="/activities">Activities</a> / <span class="sport {{ a.sport }}">{{ a.sport }}</span></div><h1>{{ a.name }}</h1><div class="sub mono">{{ a.start }}</div></div>
 </div>
-{% if a.quality_flags %}<div class="card warn">Data check: {{ a.quality_flags }}</div>{% endif %}
-<div class="card"><h2>HR zones (minutes)</h2>
-<table><tr>{% for z in a.hr_zones_min %}<th class="num">Z{{ loop.index }}</th>{% endfor %}</tr><tr>{% for z in a.hr_zones_min %}<td class="num">{{ z }}</td>{% endfor %}</tr></table></div>
+<div class="tiles">
+  <div class="tile"><div class="l">Distance</div><div class="v">{{ '{:,}'.format(a.distance_m) }}<small>m</small></div><div class="n">{{ a.pool_m ~ ' m pool' if a.pool_m else a.type }}</div></div>
+  <div class="tile"><div class="l">Duration</div><div class="v">{{ a.duration }}</div><div class="n">elapsed</div></div>
+  <div class="tile"><div class="l">Pace / speed</div><div class="v">{{ a.pace or a.speed or '–' }}</div><div class="n">average</div></div>
+  <div class="tile"><div class="l">Heart rate</div><div class="v">{{ a.avg_hr or '–' }}<small>bpm</small></div><div class="n">load {{ a.training_load or '–' }} · TE {{ a.aerobic_te or '–' }} / {{ a.anaerobic_te or '–' }}</div></div>
+</div>
+{% if a.quality_flags %}<div class="panel"><div class="notice warn"><div class="ic">!</div><div><b>Data check</b><span>{{ a.quality_flags }}. Usually a wrong pool length on the watch; this swim is left out of pace stats.</span></div></div></div>{% endif %}
+{% if a.description %}<div class="panel"><div class="panel-b">{{ a.description }}</div></div>{% endif %}
+
+<div class="panel">
+  <div class="panel-h"><h2>Time in HR zones</h2><span class="meta">minutes</span></div>
+  <div class="panel-b"><div class="chart sm"><canvas id="zones" aria-label="Minutes in heart-rate zones 1 to 5"></canvas></div></div>
+</div>
+
 {% if a.laps %}
-<div class="card"><h2>Laps / intervals</h2>
-<table><tr><th>#</th><th class="num">Dist</th><th class="num">Time</th><th class="num">Pace / speed</th><th>Stroke</th><th class="num">Strokes/len</th><th class="num">HR</th></tr>
-{% for l in a.laps %}
-{% if l.rest %}<tr class="muted"><td>{{ loop.index }}</td><td colspan="6">rest {{ l.rest }}</td></tr>
-{% else %}<tr><td>{{ loop.index }}</td><td class="num">{{ l.distance_m }} m</td><td class="num">{{ l.time }}</td><td class="num">{{ l.pace or l.speed or '' }}</td>
-<td>{{ (l.stroke or '')|lower }}</td><td class="num">{{ l.strokes_per_length or '' }}</td><td class="num">{{ l.avg_hr or '' }}</td></tr>{% endif %}
-{% endfor %}</table></div>
+<div class="panel">
+  <div class="panel-h"><h2>Laps / intervals</h2><span class="meta">{{ a.laps | rejectattr('rest') | list | length }} work</span></div>
+  <div class="panel-b flush"><table><thead><tr><th>#</th><th class="num">Dist</th><th class="num">Time</th><th class="num">Pace / speed</th><th>Stroke</th><th class="num">Strokes/len</th><th class="num">HR</th></tr></thead><tbody>
+  {% for l in a.laps %}
+  {% if l.rest %}<tr><td class="mono muted">{{ loop.index }}</td><td colspan="6" class="muted mono">rest {{ l.rest }}</td></tr>
+  {% else %}<tr><td class="mono muted">{{ loop.index }}</td><td class="num">{{ l.distance_m }} m</td><td class="num">{{ l.time }}</td><td class="num">{{ l.pace or l.speed or '' }}</td>
+  <td>{{ (l.stroke or '') | lower }}</td><td class="num">{{ l.strokes_per_length or '' }}</td><td class="num">{{ l.avg_hr or '' }}</td></tr>{% endif %}
+  {% endfor %}</tbody></table></div>
+</div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const z = {{ a.hr_zones_min | tojson_safe }};
+new Chart(document.getElementById('zones'), {type: 'bar', data: {labels: ['Z1', 'Z2', 'Z3', 'Z4', 'Z5'],
+  datasets: [{label: 'minutes', data: z, backgroundColor: css(SPORTS['{{ a.sport }}'] || '--other'), borderRadius: 3, borderSkipped: 'start', barPercentage: .6}]},
+  options: {indexAxis: 'y', scales: {x: {ticks: {maxTicksLimit: 5}}, y: {grid: {display: false}}},
+    plugins: {tooltip: {callbacks: {label: c => ` ${c.parsed.x} min`}}}}});
+</script>
 {% endblock %}

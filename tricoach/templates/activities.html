@@ -1,16 +1,20 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Activities</h1>
-<form class="card" method="get" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-  <label>Last <input name="days" value="{{ days }}" size="4"> days</label>
-  <select name="sport"><option value="">All sports</option>
-  {% for s in ['swim','bike','run','multisport','strength','other'] %}<option {{ 'selected' if sport==s }}>{{ s }}</option>{% endfor %}</select>
-  <button>Show</button>
-</form>
-<div class="card">
-<table><tr><th>When</th><th>Sport</th><th>Name</th><th class="num">Dist</th><th class="num">Time</th><th class="num">Pace</th><th class="num">HR</th><th class="num">Load</th></tr>
-{% for a in rows %}<tr><td>{{ a.start[:16] }}</td><td class="{{ a.sport }}">{{ a.sport }}</td><td><a href="/activities/{{ a.activity_id }}">{{ a.name }}</a></td>
-<td class="num">{{ a.distance_m }} m</td><td class="num">{{ a.duration }}</td><td class="num">{{ a.pace or a.speed or '' }}</td>
-<td class="num">{{ a.avg_hr or '' }}</td><td class="num">{{ a.training_load or '' }}</td></tr>{% endfor %}
-</table>{% if not rows %}<p class="muted">Nothing in this range.</p>{% endif %}</div>
+<div class="head">
+  <div><div class="eyebrow">Log</div><h1>Activities</h1><div class="sub">{{ rows | length }} session{{ '' if rows | length == 1 else 's' }} in the last {{ days }} days{% if sport %} · {{ sport }}{% endif %}</div></div>
+  <form class="filters" method="get">
+    <select name="days" aria-label="Period">{% for d in [14, 30, 90, 180, 365, 3650] %}<option value="{{ d }}" {{ 'selected' if days==d }}>{{ 'All time' if d == 3650 else 'Last ' ~ d ~ ' days' }}</option>{% endfor %}</select>
+    <select name="sport" aria-label="Sport"><option value="">All sports</option>
+    {% for s in ['swim','bike','run','multisport','strength','other'] %}<option value="{{ s }}" {{ 'selected' if sport==s }}>{{ s | capitalize }}</option>{% endfor %}</select>
+    <button class="btn">Apply</button>
+  </form>
+</div>
+<div class="panel">
+  <div class="panel-b flush"><table><thead><tr><th>When</th><th>Sport</th><th>Name</th><th class="num">Dist</th><th class="num">Time</th><th class="num">Pace</th><th class="num">HR</th><th class="num">Load</th></tr></thead><tbody>
+  {% for a in rows %}<tr><td class="mono">{{ a.start[:16] }}</td><td><span class="sport {{ a.sport }}">{{ a.sport }}</span></td><td class="name"><a href="/activities/{{ a.activity_id }}">{{ a.name }}</a></td>
+  <td class="num">{{ '{:,}'.format(a.distance_m) }} m</td><td class="num">{{ a.duration }}</td><td class="num">{{ a.pace or a.speed or '' }}</td>
+  <td class="num">{{ a.avg_hr or '' }}</td><td class="num">{{ a.training_load or '' }}</td></tr>
+  {% else %}<tr><td colspan="8" class="empty">Nothing in this range.</td></tr>{% endfor %}
+  </tbody></table></div>
+</div>
 {% endblock %}

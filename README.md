@@ -63,6 +63,16 @@ https://PUBLIC_HOST/api/sync?token=<SYNC_WEBHOOK_TOKEN>
 
 Save that link as a bookmark, or as an iOS Shortcut or Android tile you tap after a workout. You can also ask Claude to sync (`sync_now`).
 
+## Coach page
+
+`/coach` is a chat with an AI coach that reads your training data (activities, swim reps, sleep, HRV) through the same
+tools as the MCP connector, can save notes and settings, and can draft workouts. It never pushes to Garmin; approve
+drafts through the connector. The page also shows a daily briefing, written after each morning sync, and rule-based
+notices (load spikes, HRV or resting HR drifting, short sleep, gaps in a sport, stale sync) that need no API key.
+
+Set `ANTHROPIC_API_KEY` in `.env` to turn on the chat and briefings. It uses `claude-opus-5-5` (`COACH_MODEL`) with
+prompt caching; a typical question costs a few cents, a briefing about one.
+
 ## Use it with Claude
 
 In claude.ai, go to **Settings → Connectors → Add custom connector** and enter:

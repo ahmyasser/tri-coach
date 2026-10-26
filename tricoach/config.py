@@ -34,6 +34,12 @@ class Settings:
     # Public hostname (e.g. coach.example.com) — allowed Host header for MCP
     public_host: str = field(default_factory=lambda: os.getenv("PUBLIC_HOST", "localhost"))
 
+    # AI coach page (chat + daily briefing). Needs ANTHROPIC_API_KEY; without it the page shows notices only.
+    anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
+    coach_model: str = field(default_factory=lambda: os.getenv("COACH_MODEL", "claude-opus-5-5"))
+    # Write a fresh briefing after each daily sync (one API call a day)
+    coach_daily_briefing: bool = field(default_factory=lambda: os.getenv("COACH_DAILY_BRIEFING", "1") == "1")
+
 
 def get_settings() -> Settings:
     return Settings()

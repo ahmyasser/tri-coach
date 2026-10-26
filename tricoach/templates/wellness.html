@@ -1,18 +1,56 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Wellness</h1>
-<div class="card"><h2>Resting HR and overnight HRV (120 days)</h2><canvas id="w"></canvas></div>
-<div class="card"><h2>Sleep</h2><canvas id="s"></canvas></div>
-{% if not rows %}<div class="card muted">No wellness data yet. It fills in when the watch records sleep/HRV.</div>{% endif %}
+<div class="head">
+  <div><div class="eyebrow">Recovery · 120 days</div><h1>Wellness</h1><div class="sub">Overnight HRV, resting heart rate and sleep from the watch.</div></div>
+</div>
+{% if rows %}
+<div class="tiles" id="well-tiles"></div>
+<div class="panel">
+  <div class="panel-h"><h2>Overnight HRV</h2><div class="legend" id="hrv-legend"></div></div>
+  <div class="panel-b"><div class="chart"><canvas id="hrv" aria-label="Overnight HRV and 7-day average"></canvas></div></div>
+</div>
+<div class="grid2">
+  <div class="panel">
+    <div class="panel-h"><h2>Resting heart rate</h2><span class="meta">bpm</span></div>
+    <div class="panel-b"><div class="chart sm"><canvas id="rhr" aria-label="Resting heart rate"></canvas></div></div>
+  </div>
+  <div class="panel">
+    <div class="panel-h"><h2>Sleep</h2><span class="meta">hours</span></div>
+    <div class="panel-b"><div class="chart sm"><canvas id="sleep" aria-label="Hours of sleep per night"></canvas></div></div>
+  </div>
+</div>
+{% else %}
+<div class="panel"><div class="empty">No wellness data yet. It fills in when the watch records sleep and HRV.</div></div>
+{% endif %}
 {% endblock %}
 {% block scripts %}
 <script>
 const rows = {{ rows | tojson_safe }};
-new Chart(document.getElementById('w'), {type:'line', data:{labels: rows.map(r => r.day), datasets:[
-  {label:'Resting HR', data: rows.map(r => r.resting_hr), borderColor: css('--bike'), yAxisID:'h', spanGaps:true},
-  {label:'HRV last night (ms)', data: rows.map(r => r.hrv_last_night), borderColor: css('--swim'), yAxisID:'v', spanGaps:true}]},
-  options:{scales:{h:{position:'left', title:{display:true,text:'bpm'}}, v:{position:'right', grid:{display:false}, title:{display:true,text:'ms'}}}}});
-new Chart(document.getElementById('s'), {type:'bar', data:{labels: rows.map(r => r.day), datasets:[
-  {label:'Sleep (h)', data: rows.map(r => r.sleep_s ? +(r.sleep_s/3600).toFixed(2) : null), backgroundColor: css('--strength')}]}});
+if (rows.length) {
+  const labels = rows.map(r => r.day.slice(5));
+  const avg = (k, n) => { const v = rows.slice(-n).map(r => r[k]).filter(Boolean); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  const tiles = [
+    ['HRV · 7 night avg', avg('hrv_last_night', 7), 'ms', `28-night ${Math.round(avg('hrv_last_night', 28) || 0)} ms`],
+    ['Resting HR · 7 d', avg('resting_hr', 7), 'bpm', `28-day ${Math.round(avg('resting_hr', 28) || 0)} bpm`],
+    ['Sleep · 7 night avg', avg('sleep_s', 7) && avg('sleep_s', 7) / 3600, 'h', `28-night ${((avg('sleep_s', 28) || 0) / 3600).toFixed(1)} h`],
+    ['HRV status', null, '', rows[rows.length - 1].day],
+  ];
+  document.getElementById('well-tiles').innerHTML = tiles.map(([l, v, u, n], i) => `<div class="tile"><div class="l">${l}</div><div class="v">${
+    i === 3 ? (rows[rows.length - 1].hrv_status || '–').toLowerCase() : (v == null ? '–' : (u === 'h' ? v.toFixed(1) : Math.round(v)) + `<small>${u}</small>`)
+  }</div><div class="n">${n}</div></div>`).join('');
+  const hrv = rows.map(r => r.hrv_last_night), wk = rows.map(r => r.hrv_weekly_avg);
+  legend(document.getElementById('hrv-legend'), [['Last night', css('--swim')], ['7-day average', css('--text-2')]]);
+  const x = {grid: {display: false}, ticks: {maxRotation: 0, autoSkipPadding: 16}};
+  new Chart(document.getElementById('hrv'), {type: 'line', data: {labels, datasets: [
+    {label: 'Last night', data: hrv, borderColor: css('--swim'), backgroundColor: css('--swim'), spanGaps: true, borderWidth: 1.5, tension: .2},
+    {label: '7-day avg', data: wk, borderColor: css('--text-2'), backgroundColor: css('--text-2'), spanGaps: true, borderDash: [4, 3]}]},
+    options: {scales: {x, y: {ticks: {callback: v => v + ' ms', maxTicksLimit: 5}}}}});
+  new Chart(document.getElementById('rhr'), {type: 'line', data: {labels, datasets: [
+    {label: 'Resting HR', data: rows.map(r => r.resting_hr), borderColor: css('--bike'), backgroundColor: css('--bike'), spanGaps: true, tension: .2}]},
+    options: {scales: {x, y: {ticks: {maxTicksLimit: 4}}}}});
+  new Chart(document.getElementById('sleep'), {type: 'bar', data: {labels, datasets: [
+    {label: 'Sleep (h)', data: rows.map(r => r.sleep_s ? +(r.sleep_s / 3600).toFixed(2) : null), backgroundColor: css('--swim'), borderRadius: 2, borderSkipped: 'start', barPercentage: .8, categoryPercentage: .9}]},
+    options: {scales: {x, y: {ticks: {maxTicksLimit: 4}}}, plugins: {tooltip: {callbacks: {label: c => ` ${c.parsed.y.toFixed(1)} h`}}}}});
+}
 </script>
 {% endblock %}

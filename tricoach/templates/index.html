@@ -1,54 +1,95 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Overview</h1>
-<div class="grid">
-  <div class="card stat"><div class="v">{{ load.hours_7d }} h</div><div class="l">Training, last 7 days</div></div>
-  <div class="card stat"><div class="v">{{ load.acute_load_7d }}</div><div class="l">Load 7 d (usual {{ load.chronic_load_per_week_28d }}/wk)</div></div>
-  <div class="card stat"><div class="v">{{ load.acute_chronic_ratio or '-' }}</div><div class="l">{{ load.interpretation or 'Acute : chronic load' }}</div></div>
-  <div class="card stat">
-    <div class="v" style="font-size:16px">{% if overview.last_sync %}{{ overview.last_sync.started_at }}{% else %}never{% endif %}</div>
-    <div class="l">Last sync{% if overview.last_sync %} · {{ overview.last_sync.status }}{% endif %}</div>
+<div class="head">
+  <div>
+    <div class="eyebrow" id="today"></div>
+    <h1>Overview</h1>
+    <div class="sub">{{ load.interpretation | capitalize if load.interpretation else 'Acute vs chronic load appears once there are 4 weeks of data.' }}</div>
   </div>
+  <a class="btn" href="/coach">✦ Ask the coach</a>
 </div>
 
-<div class="card"><h2>Weekly hours by sport (26 weeks)</h2><canvas id="weekly"></canvas></div>
-<div class="card"><h2>Monthly distance</h2><canvas id="monthly"></canvas></div>
+<div class="tiles">
+  <div class="tile"><div class="l">Training · 7 d</div><div class="v">{{ load.hours_7d }}<small>h</small></div><div class="n">all sports</div></div>
+  <div class="tile"><div class="l">Load · 7 d</div><div class="v">{{ load.acute_load_7d }}</div><div class="n">usual {{ load.chronic_load_per_week_28d }} / week</div></div>
+  <div class="tile"><div class="l">Acute : chronic</div><div class="v">{{ load.acute_chronic_ratio or '–' }}</div><div class="n">0.8–1.3 is the build zone</div></div>
+  <div class="tile"><div class="l">Activities</div><div class="v">{{ overview.by_sport | sum(attribute='n') }}</div><div class="n">synced from Garmin</div></div>
+</div>
 
-{% if races %}
-<div class="card"><h2>Races</h2>
-<table><tr><th>Date</th><th>Race</th><th class="num">Total</th><th>Splits</th></tr>
-{% for r in races %}
-<tr><td>{{ r.date }}</td><td><a href="/activities/{{ r.activity_id }}">{{ r.name }}</a></td><td class="num">{{ r.time }}</td>
-<td>{% for l in r.legs %}<span class="{{ l.leg }}">{{ l.leg }} {{ l.time }}{% if l.pace %} ({{ l.pace }}){% elif l.speed %} ({{ l.speed }}){% endif %}</span>{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
-{% endfor %}</table></div>
+{% if briefing or notices %}
+<a class="panel" href="/coach" style="display:block">
+  <div class="panel-h"><h2>✦ Coach</h2><span class="meta">{% if briefing %}briefing {{ briefing.created_at[5:16] }}{% endif %} →</span></div>
+  {% if briefing %}<div class="panel-b" style="padding-bottom:12px;font-size:16px;letter-spacing:-.01em;color:var(--text)">{{ briefing.headline }}</div>{% endif %}
+  {% for n in notices %}
+  <div class="notice {{ n.level }}"><div class="ic">{{ '!' if n.level == 'warn' else ('✓' if n.level == 'good' else 'i') }}</div><div><b>{{ n.title }}</b><span>{{ n.detail }}</span></div></div>
+  {% endfor %}
+</a>
 {% endif %}
 
-<div class="card"><h2>Recent sessions</h2>
-<table><tr><th>When</th><th>Sport</th><th>Name</th><th class="num">Dist</th><th class="num">Time</th><th class="num">Pace</th><th class="num">HR</th></tr>
-{% for a in recent %}
-<tr><td>{{ a.start[:16] }}</td><td class="{{ a.sport }}">{{ a.sport }}</td><td><a href="/activities/{{ a.activity_id }}">{{ a.name }}</a></td>
-<td class="num">{{ a.distance_m }} m</td><td class="num">{{ a.duration }}</td><td class="num">{{ a.pace or a.speed or '' }}</td><td class="num">{{ a.avg_hr or '' }}</td></tr>
-{% endfor %}</table></div>
+<div class="panel">
+  <div class="panel-h"><h2>Weekly hours by sport</h2><div class="legend" id="weekly-legend"></div></div>
+  <div class="panel-b"><div class="chart"><canvas id="weekly" aria-label="Weekly hours by sport, last 26 weeks"></canvas></div></div>
+</div>
+
+<div class="grid3">
+  {% for key, label, sport in [('swim_km','Swim','swim'), ('bike_km','Bike','bike'), ('run_km','Run','run')] %}
+  <div class="panel">
+    <div class="panel-h"><h2><span class="sport {{ sport }}">{{ label }}</span> km per month</h2><span class="meta" id="{{ sport }}-total"></span></div>
+    <div class="panel-b"><div class="chart sm"><canvas id="m-{{ sport }}" aria-label="{{ label }} km per month"></canvas></div></div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if races %}
+<div class="panel">
+  <div class="panel-h"><h2>Races</h2><span class="meta">{{ races | length }}</span></div>
+  <div class="panel-b flush"><table><thead><tr><th>Date</th><th>Race</th><th class="num">Total</th><th>Splits</th></tr></thead><tbody>
+  {% for r in races %}
+  <tr><td class="mono">{{ r.date }}</td><td class="name"><a href="/activities/{{ r.activity_id }}">{{ r.name }}</a></td><td class="num">{{ r.time }}</td>
+  <td>{% for l in r.legs %}<span class="sport {{ l.leg }}">{{ l.leg }} <span class="mono">{{ l.time }}</span></span>{% if not loop.last %}<span class="muted"> &nbsp;·&nbsp; </span>{% endif %}{% endfor %}</td></tr>
+  {% endfor %}</tbody></table></div>
+</div>
+{% endif %}
+
+<div class="panel">
+  <div class="panel-h"><h2>Recent sessions</h2><a class="meta" href="/activities">all activities →</a></div>
+  <div class="panel-b flush"><table><thead><tr><th>When</th><th>Sport</th><th>Name</th><th class="num">Dist</th><th class="num">Time</th><th class="num">Pace</th><th class="num">HR</th></tr></thead><tbody>
+  {% for a in recent %}
+  <tr><td class="mono">{{ a.start[5:16] }}</td><td><span class="sport {{ a.sport }}">{{ a.sport }}</span></td><td class="name"><a href="/activities/{{ a.activity_id }}">{{ a.name }}</a></td>
+  <td class="num">{{ '{:,}'.format(a.distance_m) }} m</td><td class="num">{{ a.duration }}</td><td class="num">{{ a.pace or a.speed or '' }}</td><td class="num">{{ a.avg_hr or '' }}</td></tr>
+  {% else %}<tr><td colspan="7" class="empty">No sessions in the last 10 days.</td></tr>{% endfor %}</tbody></table></div>
+</div>
 
 {% if overview.data_quality_issues %}
-<div class="card"><h2 class="warn">Data to check in Garmin</h2>
-<table>{% for q in overview.data_quality_issues %}<tr><td>{{ q.local_date }}</td><td><a href="/activities/{{ q.activity_id }}">{{ q.name }}</a></td><td class="warn">{{ q.quality_flags }}</td></tr>{% endfor %}</table>
-<p class="muted">Usually a wrong pool length on the watch. These are corrected or excluded in swim stats.</p></div>
+<div class="panel">
+  <div class="panel-h"><h2>Data to check in Garmin</h2><span class="meta">{{ overview.data_quality_issues | length }}</span></div>
+  <div class="panel-b flush"><table><tbody>
+  {% for q in overview.data_quality_issues %}<tr><td class="mono">{{ q.local_date }}</td><td class="name"><a href="/activities/{{ q.activity_id }}">{{ q.name }}</a></td><td class="flag">{{ q.quality_flags }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  <p class="note" style="padding:0 20px 18px">Usually a wrong pool length on the watch. These are corrected or left out of swim stats.</p>
+</div>
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
+document.getElementById('today').textContent = new Date().toLocaleDateString('en-GB', {weekday: 'long', day: 'numeric', month: 'short'});
 const weekly = {{ weekly | tojson_safe }};
 const monthly = {{ monthly | tojson_safe }};
-const ds = (label, key, color, data) => ({label, data: data.map(r => r[key]), backgroundColor: color, borderColor: color});
-new Chart(document.getElementById('weekly'), {type:'bar', data:{labels: weekly.map(r => r.period.slice(5)),
-  datasets:[ds('Swim','swim_h',css('--swim'),weekly), ds('Bike','bike_h',css('--bike'),weekly), ds('Run','run_h',css('--run'),weekly),
-            ds('Strength','strength_h',css('--strength'),weekly), ds('Other','other_h',css('--other'),weekly)]},
-  options:{responsive:true, scales:{x:{stacked:true}, y:{stacked:true, title:{display:true, text:'hours'}}}}});
-new Chart(document.getElementById('monthly'), {type:'line', data:{labels: monthly.map(r => r.period),
-  datasets:[{...ds('Swim km','swim_km',css('--swim'),monthly), yAxisID:'s'}, {...ds('Bike km','bike_km',css('--bike'),monthly), yAxisID:'b'},
-            {...ds('Run km','run_km',css('--run'),monthly), yAxisID:'b'}]},
-  options:{responsive:true, scales:{s:{position:'left', title:{display:true,text:'swim km'}}, b:{position:'right', grid:{display:false}, title:{display:true,text:'bike / run km'}}}}});
+const stack = [['Swim', 'swim_h', '--swim'], ['Bike', 'bike_h', '--bike'], ['Run', 'run_h', '--run'], ['Strength', 'strength_h', '--strength'], ['Other', 'other_h', '--other']];
+legend(document.getElementById('weekly-legend'), stack.map(([l, , c]) => [l, css(c)]));
+new Chart(document.getElementById('weekly'), {type: 'bar', data: {labels: weekly.map(r => r.period.slice(5)),
+  datasets: stack.map(([label, key, c]) => ({label, data: weekly.map(r => r[key]), backgroundColor: css(c),
+    borderColor: css('--surface'), borderWidth: 1.5, borderRadius: 3, borderSkipped: false, barPercentage: .72, categoryPercentage: .9}))},
+  options: {scales: {x: {stacked: true, grid: {display: false}}, y: {stacked: true, ticks: {callback: v => v + ' h'}}},
+    plugins: {tooltip: {filter: i => i.parsed.y > 0, callbacks: {title: i => 'Week of ' + weekly[i[0].dataIndex].period, label: c => ` ${c.dataset.label}  ${c.parsed.y.toFixed(1)} h`}}}}});
+for (const [key, sport] of [['swim_km', 'swim'], ['bike_km', 'bike'], ['run_km', 'run']]) {
+  const total = monthly.reduce((s, r) => s + (r[key] || 0), 0);
+  document.getElementById(sport + '-total').textContent = `${Math.round(total).toLocaleString()} km · ${monthly.length} mo`;
+  new Chart(document.getElementById('m-' + sport), {type: 'bar', data: {labels: monthly.map(r => r.period.slice(2)),
+    datasets: [{label: sport, data: monthly.map(r => r[key]), backgroundColor: css(SPORTS[sport]), borderRadius: 3, borderSkipped: 'start', barPercentage: .7}]},
+    options: {scales: {x: {grid: {display: false}, ticks: {maxRotation: 0, autoSkipPadding: 8}}, y: {ticks: {maxTicksLimit: 4}}},
+      plugins: {tooltip: {callbacks: {label: c => ` ${c.parsed.y.toFixed(1)} km`}}}}});
+}
 </script>
 {% endblock %}

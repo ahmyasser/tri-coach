@@ -18,6 +18,8 @@ class Services:
     settings: Settings
     db: Database
     api_factory: Callable[[], GarminAPI]
+    # Builds the Anthropic client for the coach page; None means "use ANTHROPIC_API_KEY" (tests inject a fake)
+    llm_factory: Callable[[], Any] | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     @property
