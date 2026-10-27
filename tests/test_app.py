@@ -361,6 +361,11 @@ class PublicAndSignupTests(WebBase):
         # links work once
         self.assertIn("error=link", c.get(link, follow_redirects=False).headers["location"])
 
+    def test_email_off_is_reported(self):
+        self.accounts.create("me@x.co")
+        j = self.client().post("/auth/email", json={"email": "me@x.co"}, headers=self.H).json()
+        self.assertEqual((j["sent"], j["delivered"]), (True, False))  # no Resend key: the page says so instead of "check your inbox"
+
     def test_sign_in_email_rate_limit(self):
         self.accounts.create("busy@x.co")
         c = self.client()

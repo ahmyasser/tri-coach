@@ -73,6 +73,8 @@ if (f) f.addEventListener('submit', async e => {
     const safe = email.replace(/[<>&"]/g, '');
     out.innerHTML = j.needs_invite
       ? `<div class="msg bad">There's no account for ${safe} yet, and the beta needs an invite. <a href="/join" style="text-decoration:underline">Enter an invite code</a> or <a href="/" style="text-decoration:underline">join the waitlist</a>.</div>`
+      : !j.delivered
+      ? `<div class="msg bad"><b style="font-weight:500">We couldn't send the email.</b><br>Sign-in emails aren't switched on yet${ {{ 'true' if google_enabled else 'false' }} ? ', so use Continue with Google,' : ''} or ask whoever invited you for a sign-in link.</div>`
       : `<div class="msg good"><b style="font-weight:500">Check your inbox.</b><br>We sent a sign-in link to ${safe}. It works once, for 20 minutes. Check spam if it's not there in a minute.</div>`;
   } catch (err) { out.innerHTML = `<div class="msg bad">${err.message}</div>`; }
   finally { btn.disabled = false; btn.textContent = 'Email me a sign-in link'; }
