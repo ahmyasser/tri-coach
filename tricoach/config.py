@@ -25,23 +25,36 @@ class Settings:
     # Pause between Garmin detail calls, in milliseconds (Garmin rate-limits bursts)
     request_pause_ms: int = field(default_factory=lambda: _int("GARMIN_REQUEST_PAUSE_MS", 400))
 
-    dashboard_user: str = field(default_factory=lambda: os.getenv("DASHBOARD_USER", "ahmed"))
-    dashboard_password: str = field(default_factory=lambda: os.getenv("DASHBOARD_PASSWORD", ""))
-    # Secret used by the MCP endpoint: /mcp/<MCP_TOKEN> or "Authorization: Bearer <MCP_TOKEN>"
-    mcp_token: str = field(default_factory=lambda: os.getenv("MCP_TOKEN", ""))
-    # Secret for POST /api/sync (the "webhook" you can hit after a workout)
-    sync_webhook_token: str = field(default_factory=lambda: os.getenv("SYNC_WEBHOOK_TOKEN", ""))
-    # Public hostname (e.g. coach.example.com) — allowed Host header for MCP
+    # Public hostname (e.g. coach.example.com): links in emails, Google sign-in callback, allowed Host for MCP
     public_host: str = field(default_factory=lambda: os.getenv("PUBLIC_HOST", "localhost"))
+    brand_name: str = field(default_factory=lambda: os.getenv("BRAND_NAME", "Tri Coach"))
+    # Signs session cookies. Required in production: openssl rand -hex 32
+    secret_key: str = field(default_factory=lambda: os.getenv("SECRET_KEY", ""))
+    # Encrypts each user's Garmin tokens at rest (Fernet key): python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    token_key: str = field(default_factory=lambda: os.getenv("TOKEN_KEY", ""))
+    # Comma-separated emails that get the admin page
+    admin_emails: str = field(default_factory=lambda: os.getenv("ADMIN_EMAILS", ""))
+    # Beta: new accounts need an invite code
+    invite_only: bool = field(default_factory=lambda: os.getenv("INVITE_ONLY", "1") == "1")
 
-    # Who this instance belongs to; the coach uses the name, and the focus sport if set (e.g. "swimming")
-    athlete_name: str = field(default_factory=lambda: os.getenv("ATHLETE_NAME", ""))
-    athlete_focus: str = field(default_factory=lambda: os.getenv("ATHLETE_FOCUS", ""))
+    # Sign-in. Google: OAuth client from Google Cloud. Email links: Resend API key (without it, links are only logged)
+    google_client_id: str = field(default_factory=lambda: os.getenv("GOOGLE_CLIENT_ID", ""))
+    google_client_secret: str = field(default_factory=lambda: os.getenv("GOOGLE_CLIENT_SECRET", ""))
+    resend_api_key: str = field(default_factory=lambda: os.getenv("RESEND_API_KEY", ""))
+    email_from: str = field(default_factory=lambda: os.getenv("EMAIL_FROM", ""))
 
-    # AI coach page (chat + daily briefing). Needs ANTHROPIC_API_KEY; without it the page shows notices only.
+    # Per-user values, filled in from the account (see accounts.user_settings)
+    athlete_name: str = ""
+    athlete_focus: str = ""
+
+    # AI coach. Free and Pro tiers differ in model and daily spend cap (USD, counted from token usage)
     anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
-    coach_model: str = field(default_factory=lambda: os.getenv("COACH_MODEL", "claude-opus-5-5"))
-    # Write a fresh briefing after each daily sync (one API call a day)
+    coach_model: str = field(default_factory=lambda: os.getenv("FREE_MODEL", "claude-sonnet-5-5"))
+    free_model: str = field(default_factory=lambda: os.getenv("FREE_MODEL", "claude-sonnet-5-5"))
+    free_daily_usd: float = field(default_factory=lambda: float(os.getenv("FREE_DAILY_USD", "0.10")))
+    pro_model: str = field(default_factory=lambda: os.getenv("PRO_MODEL", "claude-opus-5-5"))
+    pro_daily_usd: float = field(default_factory=lambda: float(os.getenv("PRO_DAILY_USD", "0.50")))
+    # Write a fresh briefing after each daily sync (one small API call per user a day; not counted against the cap)
     coach_daily_briefing: bool = field(default_factory=lambda: os.getenv("COACH_DAILY_BRIEFING", "1") == "1")
 
 

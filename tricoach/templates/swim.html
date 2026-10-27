@@ -27,18 +27,18 @@
 
 <div class="panel">
   <div class="panel-h"><h2>By month</h2><span class="meta">{{ trend | length }} rows</span></div>
-  <div class="panel-b flush"><table><thead><tr><th>Month</th><th>Venue</th><th class="num">Sessions</th><th class="num">km</th><th class="num">Avg pace</th><th class="num">Rep pace</th><th class="num">SWOLF</th><th class="num">Strokes/len</th></tr></thead><tbody>
+  <div class="panel-b flush"><table><thead><tr><th>Month</th><th>Venue</th><th class="num">Sessions</th><th class="num">km</th><th class="num hide-sm">Avg pace</th><th class="num">Rep pace</th><th class="num hide-sm">SWOLF</th><th class="num hide-sm">Strokes/len</th></tr></thead><tbody>
   {% for r in trend %}<tr><td class="mono">{{ r.month }}</td><td>{{ r.venue }}</td><td class="num">{{ r.sessions }}</td><td class="num">{{ r.km }}</td>
-  <td class="num">{{ r.avg_pace_100m }}</td><td class="num">{{ r.median_rep_pace_100m }}</td><td class="num">{{ r.avg_swolf or '–' }}</td>
-  <td class="num">{{ r.avg_strokes_per_length or '–' }}</td></tr>{% else %}<tr><td colspan="8" class="empty">No swims yet.</td></tr>{% endfor %}</tbody></table></div>
+  <td class="num hide-sm">{{ r.avg_pace_100m }}</td><td class="num">{{ r.median_rep_pace_100m }}</td><td class="num hide-sm">{{ r.avg_swolf or '–' }}</td>
+  <td class="num hide-sm">{{ r.avg_strokes_per_length or '–' }}</td></tr>{% else %}<tr><td colspan="8" class="empty">No swims yet.</td></tr>{% endfor %}</tbody></table></div>
 </div>
 
 <div class="panel">
   <div class="panel-h"><h2>Swims · last 60 days</h2><span class="meta">{{ recent | length }}</span></div>
-  <div class="panel-b flush"><table><thead><tr><th>When</th><th>Name</th><th class="num">Dist</th><th class="num">Time</th><th class="num">Pace</th><th class="num">HR</th><th></th></tr></thead><tbody>
+  <div class="panel-b flush"><table><thead><tr><th>When</th><th>Name</th><th class="num">Dist</th><th class="num hide-sm">Time</th><th class="num">Pace</th><th class="num hide-sm">HR</th><th class="hide-sm"></th></tr></thead><tbody>
   {% for a in recent %}<tr><td class="mono">{{ a.start[5:16] }}</td><td class="name"><a href="/activities/{{ a.activity_id }}">{{ a.name }}</a></td>
-  <td class="num">{{ '{:,}'.format(a.distance_m) }} m</td><td class="num">{{ a.duration }}</td><td class="num">{{ a.pace or '' }}</td><td class="num">{{ a.avg_hr or '' }}</td>
-  <td class="flag">{{ a.quality_flags or '' }}</td></tr>{% else %}<tr><td colspan="7" class="empty">No swims in the last 60 days.</td></tr>{% endfor %}</tbody></table></div>
+  <td class="num">{{ '{:,}'.format(a.distance_m) }} m</td><td class="num hide-sm">{{ a.duration }}</td><td class="num">{{ a.pace or '' }}</td><td class="num hide-sm">{{ a.avg_hr or '' }}</td>
+  <td class="flag hide-sm">{{ a.quality_flags or '' }}</td></tr>{% else %}<tr><td colspan="7" class="empty">No swims in the last 60 days.</td></tr>{% endfor %}</tbody></table></div>
 </div>
 {% endblock %}
 

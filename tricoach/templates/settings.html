@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Settings · {{ brand }}{% endblock %}
+{% block content %}
+<div class="head">
+  <div><div class="eyebrow">Account</div><h1>{{ user.name or 'Settings' }}</h1><div class="sub">{{ user.email }}</div></div>
+  <form method="post" action="/logout"><button class="btn">Sign out</button></form>
+</div>
+
+<div class="grid2">
+  <div class="panel">
+    <div class="panel-h"><h2>Profile</h2></div>
+    <form class="panel-b" id="profile" style="display:flex;flex-direction:column;gap:12px">
+      <label class="eyebrow" for="name" style="margin:0">First name</label>
+      <input id="name" name="name" value="{{ user.name or '' }}" required>
+      <label class="eyebrow" for="focus" style="margin:6px 0 0">Main sport</label>
+      <select id="focus" name="focus">{% for s in sports %}<option value="{{ s }}" {{ 'selected' if (user.focus or 'other') == s }}>{{ s | capitalize }}</option>{% endfor %}</select>
+      <div><button class="btn primary">Save</button> <span class="note" id="saved" hidden>Saved.</span></div>
+    </form>
+  </div>
+
+  <div class="panel">
+    <div class="panel-h"><h2>Coach</h2><span class="pill {{ 'accent' if user.tier == 'pro' }}">{{ user.tier }}</span></div>
+    <div class="panel-b">
+      {% if allowance is not none %}
+      <div class="eyebrow">Today's coach time</div>
+      <div class="meter"><i style="width:{{ (allowance * 100) | round }}%"></i></div>
+      <p class="note">{{ (allowance * 100) | round | int }}% left. Resets at midnight. {% if user.tier != 'pro' %}Pro members get more each day.{% endif %}</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-h"><h2>Garmin</h2><span class="pill {{ 'accent' if garmin_connected }}">{{ 'connected' if garmin_connected else 'not connected' }}</span></div>
+    <div class="panel-b">
+      {% if garmin_connected %}
+      <p class="muted" style="margin-top:0">Your data syncs every morning. Connected {{ (user.garmin_connected_at or '')[:10] }}.</p>
+      <div class="filters"><a class="btn" href="/connect">Reconnect</a><button class="btn" id="disconnect">Disconnect</button><button class="btn" id="sync">Sync now</button></div>
+      <p class="note" id="garmin-msg" hidden></p>
+      {% else %}
+      <p class="muted" style="margin-top:0">Connect your Garmin to bring in your training and sleep.</p>
+      <a class="btn primary" href="/connect">Connect Garmin</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-h"><h2>Use with Claude</h2><span class="meta">optional</span></div>
+    <div class="panel-b">
+      <p class="muted" style="margin-top:0">Add this as a custom connector in claude.ai (Settings → Connectors) to talk to your data from Claude. Keep it private: anyone with the link can read your training.</p>
+      <div class="copy"><input readonly value="{{ mcp_url }}" aria-label="Connector link"><button class="btn" data-copy>Copy</button></div>
+      <p class="note">Sync-now link for a phone shortcut:</p>
+      <div class="copy"><input readonly value="{{ sync_url }}" aria-label="Sync link"><button class="btn" data-copy>Copy</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-h"><h2>Privacy</h2></div>
+  <div class="panel-b">
+    <div class="filters">
+      <button class="btn" id="everywhere">Sign out on all devices</button>
+      <a class="btn" href="/privacy">Privacy policy</a>
+    </div>
+    <details style="margin-top:18px"><summary class="muted" style="cursor:pointer">Delete my account</summary>
+      <p class="muted">This permanently deletes your account, training data, coach chats and Garmin connection. It can't be undone. Type your email to confirm.</p>
+      <div class="filters"><input id="confirm" placeholder="{{ user.email }}" style="min-width:240px"><button class="btn" id="delete" style="color:var(--critical);border-color:color-mix(in srgb,var(--critical) 40%,transparent)">Delete everything</button></div>
+      <p class="note" id="del-msg" hidden style="color:var(--critical)"></p>
+    </details>
+  </div>
+</div>
+<style>
+  .meter { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; margin-top: 10px; border: 1px solid var(--line); }
+  .meter i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+  .copy { display: flex; gap: 8px; } .copy input { flex: 1; min-width: 0; font: 12px "Geist Mono", monospace; color: var(--text-2); }
+</style>
+{% endblock %}
+{% block scripts %}
+<script>
+const H = {'Content-Type': 'application/json', 'X-Requested-With': 'tricoach'};
+const post = (url, data) => fetch(url, {method: 'POST', headers: H, body: JSON.stringify(data || {})}).then(r => r.json());
+document.getElementById('profile').addEventListener('submit', async e => {
+  e.preventDefault();
+  const j = await post('/api/profile', {name: e.target.name.value, focus: e.target.focus.value, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone});
+  if (j.error) return alert(j.error);
+  document.getElementById('saved').hidden = false;
+});
+document.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', async () => {
+  const i = b.previousElementSibling; i.select();
+  try { await navigator.clipboard.writeText(i.value); } catch (e) { document.execCommand('copy'); }
+  b.textContent = 'Copied'; setTimeout(() => b.textContent = 'Copy', 1500);
+}));
+const msg = t => { const m = document.getElementById('garmin-msg'); m.hidden = false; m.textContent = t; };
+document.getElementById('disconnect')?.addEventListener('click', async () => {
+  if (!confirm('Disconnect Garmin? Your existing data stays; new data stops coming in.')) return;
+  await post('/api/garmin/disconnect'); location.reload();
+});
+document.getElementById('sync')?.addEventListener('click', async () => {
+  await fetch('/api/sync', {method: 'POST', headers: H}); msg('Syncing. New sessions appear in a minute or two.');
+});
+document.getElementById('everywhere').addEventListener('click', async () => {
+  if (!confirm('Sign out on every device, including this one?')) return;
+  await post('/api/account/logout-everywhere'); location.href = '/';
+});
+document.getElementById('delete').addEventListener('click', async () => {
+  const j = await post('/api/account/delete', {confirm: document.getElementById('confirm').value});
+  if (j.error) { const m = document.getElementById('del-msg'); m.hidden = false; m.textContent = j.error; return; }
+  location.href = '/';
+});
+</script>
+{% endblock %}

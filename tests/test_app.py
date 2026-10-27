@@ -25,8 +25,7 @@ TODAY = date(2026, 10, 26)
 
 def make_services(fake: FakeGarmin | None = None):
     fake = fake or FakeGarmin()
-    settings = Settings(database_url="sqlite:///:memory:", dashboard_password="pw", mcp_token="mcptok",
-                        sync_webhook_token="synctok", public_host="coach.test", request_pause_ms=0)
+    settings = Settings(database_url="sqlite:///:memory:", public_host="coach.test", request_pause_ms=0)
     return build_services(settings, api_factory=lambda: fake), fake
 
 
@@ -228,7 +227,7 @@ class McpTests(unittest.TestCase):
         svc.syncer().run(full=True)
         from tricoach.mcp_server import build_mcp
 
-        server = build_mcp(svc)
+        server = build_mcp(lambda: svc)
 
         async def go():
             async with Client(server) as c:
@@ -264,181 +263,285 @@ class McpTests(unittest.TestCase):
         self.assertGreater(svc.db.query_one("SELECT COUNT(*) AS n FROM laps")["n"], 0)
 
 
-class WebTests(unittest.TestCase):
+class WebBase(unittest.TestCase):
+    """A multi-user app on SQLite with fake Garmin accounts and a scripted Claude."""
+
     def setUp(self):
+        from cryptography.fernet import Fernet
         from starlette.testclient import TestClient
 
+        from tricoach.accounts import Accounts, Tenants
+        from tricoach.db import Database
         from tricoach.web import create_app
 
-        self.svc, _ = make_services()
-        self.svc.syncer().run(full=True)
-        self.client = TestClient(create_app(self.svc, run_scheduler=False), base_url="http://coach.test")
-        self.client.__enter__()
-        self.auth = {"Authorization": "Basic " + base64.b64encode(b"ahmed:pw").decode()}
+        self.settings = Settings(database_url="sqlite:///:memory:", public_host="coach.test", request_pause_ms=0,
+                                 secret_key="test", token_key=Fernet.generate_key().decode(), admin_emails="admin@example.com",
+                                 anthropic_api_key="", free_daily_usd=0.10, pro_daily_usd=0.50)
+        self.accounts = Accounts(self.settings, Database(self.settings.database_url))
+        self.garmins: dict[str, FakeGarmin] = {}
+        self.tenants = Tenants(self.settings, self.accounts,
+                               garmin_factory=lambda user, tokens: self.garmins.setdefault(user["email"], FakeGarmin()))
+        self.app = create_app(self.tenants, run_scheduler=False)
+        self.clients = []
 
     def tearDown(self):
-        self.client.__exit__(None, None, None)
+        for c in self.clients:
+            c.__exit__(None, None, None)
 
-    def test_dashboard_auth_and_pages(self):
-        self.assertEqual(self.client.get("/").status_code, 401)
-        for path in ("/", "/swim", "/activities", "/activities/1009", "/workouts", "/wellness", "/api/volume"):
-            r = self.client.get(path, headers=self.auth)
-            self.assertEqual(r.status_code, 200, path)
-        self.assertIn("5:44:57", self.client.get("/", headers=self.auth).text)
-        self.assertEqual(self.client.get("/activities/999", headers=self.auth).status_code, 404)
-        self.assertEqual(self.client.get("/healthz").status_code, 200)
+    def client(self):
+        from starlette.testclient import TestClient
 
-    def test_sync_webhook_auth(self):
-        self.assertEqual(self.client.post("/api/sync").status_code, 401)
-        self.assertEqual(self.client.post("/api/sync?token=nope").status_code, 401)
-        self.assertEqual(self.client.post("/api/sync", headers={"X-Sync-Token": "synctok"}).status_code, 200)
+        # Only the first client runs the app's startup (the MCP session manager starts once); the rest share it.
+        c = TestClient(self.app, base_url="http://coach.test")
+        if not self.clients:
+            c.__enter__()
+            self.clients.append(c)
+        return c
 
-    def test_mcp_http(self):
-        init = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
-            "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}}}
-        hdr = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
-        self.assertEqual(self.client.post("/mcp", json=init, headers=hdr).status_code, 401)
-        self.assertEqual(self.client.post("/mcp/wrong", json=init, headers=hdr).status_code, 401)
-        r = self.client.post("/mcp/mcptok", json=init, headers=hdr)
+    H = {"X-Requested-With": "tricoach"}
+
+    def sign_in(self, email, name="Sara", onboard=True, connect=False):
+        """Create the account (if needed) and return a client signed in through a real sign-in link."""
+        user = self.accounts.by("email", email) or self.accounts.create(email)
+        c = self.client()
+        r = c.get("/auth/link?t=" + self.accounts.new_login_link(email), follow_redirects=False)
+        self.assertEqual(r.status_code, 303)
+        if onboard:
+            c.post("/api/profile", json={"name": name, "focus": "triathlon", "timezone": "Africa/Cairo"}, headers=self.H)
+        if connect:
+            self.accounts.save_garmin_tokens(user["id"], '{"fake": "tokens"}')
+            from tricoach import scheduler
+            scheduler.run_sync(self.tenants.services(self.accounts.get(user["id"])), "backfill")
+        return c, self.accounts.by("email", email)
+
+
+class PublicAndSignupTests(WebBase):
+    def test_landing_legal_and_app_files(self):
+        c = self.client()
+        r = c.get("/")
+        self.assertIn("Join the waitlist", r.text)
+        self.assertNotIn("Overview", r.text)
+        for path in ("/privacy", "/terms", "/login", "/join", "/healthz", "/icon-192.png", "/apple-touch-icon.png", "/icon.svg"):
+            self.assertEqual(c.get(path).status_code, 200, path)
+        self.assertEqual(c.get("/manifest.webmanifest").json()["display"], "standalone")
+        self.assertEqual(c.get("/coach", follow_redirects=False).headers["location"], "/login?next=/coach")
+        self.assertEqual(c.get("/api/volume").status_code, 401)
+
+    def test_waitlist(self):
+        c = self.client()
+        self.assertEqual(c.post("/api/waitlist", json={"email": "a@b.co"}).status_code, 403)
+        self.assertEqual(c.post("/api/waitlist", json={"email": "nope"}, headers=self.H).status_code, 400)
+        self.assertTrue(c.post("/api/waitlist", json={"email": "A@B.co", "sport": "running"}, headers=self.H).json()["ok"])
+        self.assertEqual([w["email"] for w in self.accounts.waitlist()], ["a@b.co"])
+
+    def test_invite_only_signup_then_onboarding(self):
+        from unittest import mock
+
+        sent = []
+        c = self.client()
+        with mock.patch("tricoach.auth.Mailer.send_link", lambda self_, to, link, invited=False: sent.append((to, link)) or True):
+            self.assertTrue(c.post("/auth/email", json={"email": "new@x.co"}, headers=self.H).json()["needs_invite"])
+            code = self.accounts.create_invite("for new")
+            self.assertIn("You're invited", c.get(f"/join?code={code.lower()}").text)
+            self.assertTrue(c.post("/auth/email", json={"email": "new@x.co"}, headers=self.H).json()["sent"])
+            # the invite is used up once the account exists; a second person can't reuse it
+            link = sent[-1][1].replace("http://coach.test", "")
+            self.assertEqual(c.get(link, follow_redirects=False).headers["location"], "/")
+            self.assertEqual(c.get("/", follow_redirects=False).headers["location"], "/welcome")
+            self.assertIn("Tell your coach", c.get("/welcome").text)
+            self.assertEqual(c.post("/api/profile", json={"name": "", "focus": "x"}, headers=self.H).status_code, 400)
+            self.assertTrue(c.post("/api/profile", json={"name": "Nour", "focus": "running", "timezone": "Europe/Berlin"}, headers=self.H).json()["ok"])
+            page = c.get("/").text
+            self.assertIn("Connect your Garmin", page)
+            other = self.client()
+            other.get(f"/join?code={code}")
+            self.assertTrue(other.post("/auth/email", json={"email": "two@x.co"}, headers=self.H).json()["needs_invite"])
+        user = self.accounts.by("email", "new@x.co")
+        self.assertEqual((user["name"], user["focus"], user["timezone"], user["tier"]), ("Nour", "running", "Europe/Berlin", "free"))
+        # links work once
+        self.assertIn("error=link", c.get(link, follow_redirects=False).headers["location"])
+
+    def test_sign_in_email_rate_limit(self):
+        self.accounts.create("busy@x.co")
+        c = self.client()
+        codes = [c.post("/auth/email", json={"email": "busy@x.co"}, headers=self.H).status_code for _ in range(7)]
+        self.assertEqual(codes[:5], [200] * 5)
+        self.assertEqual(codes[-1], 429)
+
+
+class MultiUserTests(WebBase):
+    def test_users_only_see_their_own_data(self):
+        a, ua = self.sign_in("a@x.co", "Ahmed", connect=True)
+        b, ub = self.sign_in("b@x.co", "Hana")
+        self.assertIn("5:44:57", a.get("/").text)
+        page_b = b.get("/").text
+        self.assertNotIn("5:44:57", page_b)
+        self.assertIn("Connect your Garmin", page_b)
+        self.assertEqual(a.get("/activities/1009").status_code, 200)
+        self.assertEqual(b.get("/activities/1009").status_code, 404)
+        self.assertEqual(b.get("/api/volume").json()[-1]["swim_km"], 0)
+        # Garmin tokens are stored encrypted
+        self.assertNotIn("fake", self.accounts.get(ua["id"])["garmin_tokens"])
+
+    def test_mcp_is_scoped_by_token(self):
+        _, ua = self.sign_in("a@x.co", connect=True)
+        _, ub = self.sign_in("b@x.co")
+        c = self.client()
+        hdr = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json", "MCP-Protocol-Version": "2025-06-18"}
+        call = {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "training_overview", "arguments": {}}}
+        self.assertEqual(c.post("/mcp/nope", json=call, headers=hdr).status_code, 401)
+        ra = c.post(f"/mcp/{ua['mcp_token']}", json=call, headers=hdr)
+        rb = c.post(f"/mcp/{ub['mcp_token']}", json=call, headers=hdr)
+        self.assertEqual(ra.status_code, 200, ra.text)
+        self.assertIn('{"sport":"swim","n":7', ra.text)
+        self.assertIn('"by_sport":[]', rb.text)
+        r = c.post("/mcp", json=call, headers={**hdr, "Authorization": f"Bearer {ub['mcp_token']}"})
         self.assertEqual(r.status_code, 200, r.text)
-        self.assertIn("tri-coach", r.text)
-        r = self.client.post("/mcp", json=init, headers={**hdr, "Authorization": "Bearer mcptok"})
-        self.assertEqual(r.status_code, 200, r.text)
-        listing = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
-        r = self.client.post("/mcp/mcptok", json=listing, headers={**hdr, "MCP-Protocol-Version": "2025-06-18"})
-        self.assertEqual(r.status_code, 200, r.text)
-        self.assertIn("swim_trend", r.text)
 
-    def test_coach_page_and_csrf(self):
-        r = self.client.get("/coach", headers=self.auth)
-        self.assertEqual(r.status_code, 200)
-        self.assertIn("ANTHROPIC_API_KEY", r.text)  # no key: setup instructions instead of the chat box
-        self.assertEqual(self.client.post("/api/coach/chat", json={"message": "hi"}, headers=self.auth).status_code, 403)
-        r = self.client.post("/api/coach/chat", json={"message": "hi"}, headers={**self.auth, "X-Requested-With": "tricoach"})
-        self.assertIn("ANTHROPIC_API_KEY", r.text)
-        self.assertEqual(self.client.post("/api/coach/briefing", headers={**self.auth, "X-Requested-With": "tricoach"}).status_code, 503)
+    def test_sync_webhook_per_user(self):
+        from unittest import mock
 
-    def test_coach_chat_with_tools(self):
-        fake = FakeLLM([
-            [{"type": "tool_use", "id": "tu1", "name": "training_overview", "input": {}}],
-            [{"type": "text", "text": "Solid week. **Swim more.**"}],
-        ])
-        self.svc.llm_factory = lambda: fake
-        hdr = {**self.auth, "X-Requested-With": "tricoach"}
-        r = self.client.post("/api/coach/chat", json={"message": "How was my week?"}, headers=hdr)
+        _, ua = self.sign_in("a@x.co")
+        c = self.client()
+        self.assertEqual(c.post("/api/sync?token=wrong").status_code, 401)
+        with mock.patch("tricoach.scheduler.run_sync") as run:
+            self.assertEqual(c.get(f"/api/sync?token={ua['sync_token']}").status_code, 200)
+        self.assertEqual(run.call_args[0][0].user["id"], ua["id"])
+
+    def test_logout_everywhere_and_delete_account(self):
+        a, ua = self.sign_in("a@x.co", connect=True)
+        a2 = self.client()
+        a2.get("/auth/link?t=" + self.accounts.new_login_link("a@x.co"))
+        self.assertEqual(a2.get("/settings").status_code, 200)
+        a.post("/api/account/logout-everywhere", headers=self.H)
+        self.assertEqual(a2.get("/settings", follow_redirects=False).status_code, 303)
+
+        c, uc = self.sign_in("c@x.co", connect=True)
+        self.assertEqual(c.post("/api/account/delete", json={"confirm": "wrong"}, headers=self.H).status_code, 400)
+        self.assertTrue(c.post("/api/account/delete", json={"confirm": "c@x.co"}, headers=self.H).json()["ok"])
+        self.assertIsNone(self.accounts.by("email", "c@x.co"))
+        self.assertIn("Join the waitlist", c.get("/").text)
+
+    def test_admin(self):
+        u, _ = self.sign_in("user@x.co")
+        self.assertEqual(u.get("/admin").status_code, 404)
+        self.assertEqual(u.post("/api/admin/invite", json={}, headers=self.H).status_code, 404)
+        admin, ua = self.sign_in("admin@example.com", "Ahmed")
+        self.assertIn("Beta", admin.get("/admin").text)
+        self.accounts.join_waitlist("wait@x.co")
+        j = admin.post("/api/admin/invite", json={"email": "wait@x.co"}, headers=self.H).json()
+        self.assertTrue(self.accounts.invite_ok(j["code"]))
+        self.assertFalse(j["emailed"])  # no Resend key in tests
+        self.assertEqual(self.accounts.waitlist()[0]["invited_code"], j["code"])
+        self.assertIn("error", admin.post("/api/admin/login-link", json={"email": "ghost@x.co"}, headers=self.H).json())
+        self.assertIn("/auth/link?t=", admin.post("/api/admin/login-link", json={"email": "user@x.co"}, headers=self.H).json()["link"])
+        target = self.accounts.by("email", "user@x.co")
+        self.assertTrue(admin.post("/api/admin/tier", json={"user_id": target["id"], "tier": "pro"}, headers=self.H).json()["ok"])
+        self.assertEqual(self.accounts.get(target["id"])["tier"], "pro")
+
+
+class CoachTests(WebBase):
+    def setUp(self):
+        super().setUp()
+        self.c, self.user = self.sign_in("a@x.co", "Sara", connect=True)
+
+    def llm(self, replies, usage=None):
+        fake = FakeLLM(replies, usage)
+        self.tenants.llm_factory = lambda: fake
+        return fake
+
+    def test_coach_off_without_key(self):
+        self.assertIn("warming up", self.c.get("/coach").text)
+        r = self.c.post("/api/coach/chat", json={"message": "hi"}, headers=self.H)
+        self.assertIn("isn't switched on", r.text)
+        self.assertEqual(self.c.post("/api/coach/chat", json={"message": "hi"}).status_code, 403)
+
+    def test_chat_with_tools_uses_tier_model(self):
+        from tricoach import coach
+
+        fake = self.llm([[{"type": "tool_use", "id": "tu1", "name": "training_overview", "input": {}}],
+                         [{"type": "text", "text": "Solid week. **Swim more.**"}]])
+        r = self.c.post("/api/coach/chat", json={"message": "How was my week?"}, headers=self.H)
         events = [json.loads(line) for line in r.text.splitlines()]
-        self.assertEqual([e["t"] for e in events], ["tool", "text", "done"])
-        self.assertEqual(len(fake.calls), 2)
-        second = fake.calls[1]
-        self.assertEqual(second["fallbacks"], "default")
-        self.assertEqual(second["messages"][-1]["content"][0]["type"], "tool_result")
-        self.assertIn("by_sport", second["messages"][-1]["content"][0]["content"])
-        self.assertTrue(all(t["eager_input_streaming"] for t in second["tools"]))
-
-        from tricoach import coach
-        history = coach.transcript(self.svc, coach.current_thread(self.svc))
-        self.assertEqual(history[0], {"role": "user", "text": "How was my week?"})
+        self.assertEqual([e["t"] for e in events], ["tool", "text", "allowance", "done"])
+        self.assertEqual(fake.calls[0]["model"], "claude-sonnet-5-5")
+        self.assertIn("You are Sara's endurance coach", fake.calls[0]["system"][0]["text"])
+        self.assertIn("by_sport", fake.calls[1]["messages"][-1]["content"][0]["content"])
+        svc = self.tenants.services(self.accounts.get(self.user["id"]))
+        history = coach.transcript(svc, coach.current_thread(svc))
         self.assertEqual(history[1]["tools"], ["Checked training overview"])
-        self.assertIn("Swim more", history[1]["text"])
-        page = self.client.get("/coach", headers=self.auth).text
-        self.assertIn("Swim more", page)
+        self.assertIn("Swim more", self.c.get("/coach").text)
 
-        # a new chat starts from an empty history; the old thread stays in the database
-        self.client.post("/api/coach/new", headers=hdr)
-        self.assertEqual(coach.transcript(self.svc, coach.current_thread(self.svc)), [])
-
-    def test_coach_briefing_and_notices(self):
+    def test_daily_allowance(self):
         from tricoach import coach
 
-        fake = FakeLLM([[{"type": "text", "text": "Recovery week: keep it easy.\n\n**Last 7 days**\n- 2 swims"}]])
-        self.svc.llm_factory = lambda: fake
-        r = self.client.post("/api/coach/briefing", headers={**self.auth, "X-Requested-With": "tricoach"})
-        self.assertEqual(r.status_code, 200, r.text)
-        self.assertEqual(r.json()["headline"], "Recovery week: keep it easy.")
-        self.assertIn("Recovery week", self.client.get("/", headers=self.auth).text)
+        big = {"input_tokens": 1000, "output_tokens": 20000}  # 0.002 + 0.20 USD on Sonnet 5.5
+        self.llm([[{"type": "text", "text": "One."}]] * 3, usage=big)
+        r = self.c.post("/api/coach/chat", json={"message": "q1"}, headers=self.H)
+        self.assertIn('"allowance", "v": 0.0', r.text)
+        self.assertAlmostEqual(self.accounts.spent_today(self.user["id"]), 0.202)
+        r = self.c.post("/api/coach/chat", json={"message": "q2"}, headers=self.H)
+        self.assertIn(coach.OUT_OF_ALLOWANCE, r.text)
+        self.assertEqual(self.c.post("/api/coach/briefing", headers=self.H).status_code, 429)
+        self.accounts.update(self.user["id"], tier="pro")  # cap 0.50 and Opus
+        fake = self.llm([[{"type": "text", "text": "Two."}]], usage={"output_tokens": 10})
+        r = self.c.post("/api/coach/chat", json={"message": "q3"}, headers=self.H)
+        self.assertIn("Two.", r.text)
+        self.assertEqual(fake.calls[0]["model"], "claude-opus-5-5")
+
+    def test_briefing_and_notices(self):
+        from tricoach import coach
+
+        fake = self.llm([[{"type": "text", "text": "Recovery week: keep it easy.\n\n**Last 7 days**\n- 2 swims"}]],
+                        usage={"output_tokens": 1000})
+        r = self.c.post("/api/coach/briefing", headers=self.H)
+        self.assertEqual(r.json()["headline"], "Recovery week: keep it easy.", r.text)
+        self.assertIn("Recovery week", self.c.get("/").text)
         self.assertNotIn("tools", fake.calls[0])
-
-        for n in coach.notices(self.svc):
+        self.assertEqual(self.accounts.spent_today(self.user["id"]), 0)  # briefings don't use the allowance
+        self.assertGreater(self.accounts.spent_today(self.user["id"] + "#briefing"), 0)
+        svc = self.tenants.services(self.accounts.get(self.user["id"]))
+        for n in coach.notices(svc):
             self.assertIn(n["level"], ("warn", "info", "good"))
-        self.svc.db.execute("DELETE FROM sync_runs")
-        self.assertEqual(coach.notices(self.svc)[0]["title"], "No Garmin sync yet")
 
 
-class OnboardingTests(unittest.TestCase):
-    """Things a second, non-technical user relies on: web Garmin sign-in, Send to Garmin, their own name."""
-
-    def setUp(self):
-        import dataclasses
-        import tempfile
-
-        from starlette.testclient import TestClient
-
-        from tricoach.web import create_app
-
-        self.tmp = tempfile.TemporaryDirectory()
-        self.svc, self.fake = make_services()
-        self.svc.settings = dataclasses.replace(self.svc.settings, garmin_tokenstore=self.tmp.name + "/tokens",
-                                                athlete_name="Sara", athlete_focus="running")
-        self.client = TestClient(create_app(self.svc, run_scheduler=False), base_url="http://coach.test")
-        self.client.__enter__()
-        self.hdr = {"Authorization": "Basic " + base64.b64encode(b"ahmed:pw").decode(), "X-Requested-With": "tricoach"}
-
-    def tearDown(self):
-        self.client.__exit__(None, None, None)
-        self.tmp.cleanup()
-
-    def test_banner_until_connected_then_code_login(self):
+class GarminConnectTests(WebBase):
+    def test_code_login_saves_encrypted_tokens_and_syncs(self):
         from unittest import mock
 
         from tricoach import garmin
 
-        self.assertIn("Connect your Garmin", self.client.get("/", headers=self.hdr).text)
-        self.assertEqual(self.client.get("/connect", headers=self.hdr).status_code, 200)
-        self.assertEqual(self.client.post("/api/garmin/login", json={"email": "a@b.c", "password": "x"},
-                                          headers={"Authorization": self.hdr["Authorization"]}).status_code, 403)
-
+        c, user = self.sign_in("hana@x.co", "Hana")
+        self.assertEqual(c.post("/api/garmin/login", json={"email": "h@g.co", "password": "x"}).status_code, 403)
         fake = FakeGarminLogin(needs_code=True)
-        with mock.patch.object(garmin, "_new_client", lambda email, pw: fake), \
-                mock.patch("tricoach.scheduler.run_sync") as sync:
-            r = self.client.post("/api/garmin/login", json={"email": "sara@example.com", "password": "pw1"}, headers=self.hdr)
-            self.assertEqual(r.json(), {"needs_code": True})
-            self.assertFalse(garmin.tokens_present(self.svc.settings.garmin_tokenstore))
-            r = self.client.post("/api/garmin/code", json={"code": "123456"}, headers=self.hdr)
+        with mock.patch.object(garmin, "_new_client", lambda email, pw: fake), mock.patch("tricoach.scheduler.run_sync") as sync:
+            self.assertEqual(c.post("/api/garmin/login", json={"email": "h@g.co", "password": "pw1"}, headers=self.H).json(), {"needs_code": True})
+            self.assertIsNone(self.accounts.get(user["id"])["garmin_tokens"])
+            r = c.post("/api/garmin/code", json={"code": "123456"}, headers=self.H)
             self.assertEqual(r.json()["name"], "Sara Example", r.text)
-            self.assertEqual(fake.code_used, "123456")
             sync.assert_called_once()
-        self.assertTrue(garmin.tokens_present(self.svc.settings.garmin_tokenstore))
-        self.assertNotIn("Connect your Garmin", self.client.get("/", headers=self.hdr).text)
-        # a code without a pending sign-in is a friendly error, not a crash
-        r = self.client.post("/api/garmin/code", json={"code": "1"}, headers=self.hdr)
-        self.assertIn("expired", r.json()["error"])
+        self.assertEqual(self.accounts.garmin_tokens(self.accounts.get(user["id"])), fake.dumps())
+        self.assertNotIn("Connect your Garmin", c.get("/").text)
+        self.assertIn("expired", c.post("/api/garmin/code", json={"code": "1"}, headers=self.H).json()["error"])
 
     def test_wrong_password_message(self):
         from unittest import mock
 
         from tricoach import garmin
 
+        c, _ = self.sign_in("x@x.co")
         with mock.patch.object(garmin, "_new_client", lambda email, pw: FakeGarminLogin(fail=True)):
-            r = self.client.post("/api/garmin/login", json={"email": "a@b.c", "password": "nope"}, headers=self.hdr)
-        self.assertEqual(r.status_code, 400)
+            r = c.post("/api/garmin/login", json={"email": "a@b.c", "password": "nope"}, headers=self.H)
         self.assertIn("didn't accept", r.json()["error"])
 
     def test_send_draft_to_garmin(self):
-        w = self.svc.planner.create(WorkoutTests.SWIM)
-        r = self.client.post(f"/api/workouts/{w['id']}/push", json={"date": "2026-11-03"}, headers=self.hdr)
+        c, user = self.sign_in("a@x.co", connect=True)
+        svc = self.tenants.services(self.accounts.get(user["id"]))
+        w = svc.planner.create(WorkoutTests.SWIM)
+        r = c.post(f"/api/workouts/{w['id']}/push", json={"date": "2026-11-03"}, headers=self.H)
         self.assertEqual(r.json(), {"status": "scheduled", "scheduled_date": "2026-11-03"}, r.text)
-        self.assertEqual(len(self.fake.uploaded), 1)
-        r = self.client.post(f"/api/workouts/{w['id']}/push", json={"date": "2026-11-04"}, headers=self.hdr)
-        self.assertIn("Already on the Garmin calendar", r.json()["error"])
-        self.assertIn("on garmin", self.client.get("/workouts", headers=self.hdr).text)
-
-    def test_coach_uses_athlete_name(self):
-        from tricoach import coach
-
-        prompt = coach.system_prompt(self.svc)
-        self.assertIn("You are Sara's endurance coach", prompt)
-        self.assertIn("Running is the main focus", prompt)
-        self.assertNotIn("Ahmed", prompt)
+        self.assertEqual(len(self.garmins["a@x.co"].uploaded), 1)
+        self.assertIn("on garmin", c.get("/workouts").text)
 
 
 class FakeGarminLogin:
@@ -458,9 +561,8 @@ class FakeGarminLogin:
         self.code_used = code
         return None, None
 
-    def dump(self, path):
-        with open(os.path.join(path, "garmin_tokens.json"), "w") as f:
-            f.write("{}")
+    def dumps(self):
+        return '{"garmin": "tokens"}'
 
     def _load_profile_and_settings(self):
         self.full_name = "Sara Example"
@@ -477,8 +579,8 @@ class FakeBlock:
 class FakeLLM:
     """Stands in for anthropic.Anthropic: each beta.messages.stream() call plays the next scripted reply."""
 
-    def __init__(self, replies):
-        self.replies, self.calls = list(replies), []
+    def __init__(self, replies, usage=None):
+        self.replies, self.calls, self.usage = list(replies), [], usage
         self.beta = self
         self.messages = self
 
@@ -486,12 +588,12 @@ class FakeLLM:
         import copy
 
         self.calls.append(copy.deepcopy(kw))
-        return FakeStream([FakeBlock(b) for b in self.replies.pop(0)])
+        return FakeStream([FakeBlock(b) for b in self.replies.pop(0)], self.usage)
 
 
 class FakeStream:
-    def __init__(self, blocks):
-        self.blocks = blocks
+    def __init__(self, blocks, usage=None):
+        self.blocks, self.usage = blocks, usage
 
     def __enter__(self):
         return self
@@ -511,7 +613,7 @@ class FakeStream:
         from types import SimpleNamespace as NS
 
         tool = any(b.type == "tool_use" for b in self.blocks)
-        return NS(content=self.blocks, model="fake", stop_reason="tool_use" if tool else "end_turn")
+        return NS(content=self.blocks, model=None, usage=self.usage, stop_reason="tool_use" if tool else "end_turn")
 
 
 if __name__ == "__main__":

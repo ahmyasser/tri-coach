@@ -12,7 +12,7 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +52,15 @@ def connect(tokenstore: str) -> Any:
     return client
 
 
+def connect_tokens(token_json: str) -> Any:
+    """Log in with a user's saved tokens (the JSON from ``client.dumps()``)."""
+    from garminconnect import Garmin
+
+    client = Garmin()
+    client.login(token_json)
+    return client
+
+
 def interactive_login(tokenstore: str, email: str | None = None) -> str:
     """One-time login. Asks for password (and MFA code if enabled); saves refresh tokens."""
     from getpass import getpass
@@ -76,13 +85,13 @@ class WebLogin:
     """Two-step Garmin login for the dashboard's Connect page: password first, then the emailed code if asked.
 
     The password is only held for the request. A login waiting for its code keeps Garmin's session state in
-    memory for 10 minutes; nothing is written to disk until it succeeds, and then only the refresh tokens.
+    memory for 10 minutes; nothing is stored until it succeeds, and then only the tokens, handed to ``save``.
     """
 
     TTL_S = 600
 
-    def __init__(self, tokenstore: str):
-        self.tokenstore = tokenstore
+    def __init__(self, save: Callable[[str], None]):
+        self.save = save
         self._pending: tuple[Any, Any, str, float] | None = None
         self._lock = threading.Lock()
 
@@ -105,9 +114,7 @@ class WebLogin:
         return self._finish(client, email)
 
     def _finish(self, client: Any, email: str) -> dict[str, Any]:
-        path = Path(self.tokenstore).expanduser()
-        path.mkdir(parents=True, exist_ok=True, mode=0o700)
-        client.client.dump(str(path))
+        self.save(client.client.dumps())
         with contextlib.suppress(Exception):
             client._load_profile_and_settings()  # fills full_name; tokens are already saved
         return {"needs_code": False, "name": getattr(client, "full_name", None) or getattr(client, "display_name", None) or email}

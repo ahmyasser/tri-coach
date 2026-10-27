@@ -79,7 +79,6 @@ TOOL_LABELS = {
 }
 
 _WRITE = re.compile(r"\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|attach|pragma|vacuum)\b", re.I)
-_chat_lock = threading.Lock()
 
 
 # ------------------------------------------------------------------ tools
@@ -285,18 +284,26 @@ def _event(kind: str, value: Any = None) -> str:
     return json.dumps({"t": kind, "v": value}) + "\n"
 
 
+OUT_OF_ALLOWANCE = "You've used today's coach allowance. It resets at midnight."
+_chat_locks: dict[str, threading.Lock] = {}
+
+
 def chat(svc: Services, text: str) -> Iterator[str]:
-    """Stream one coach reply as NDJSON events: text deltas, tool chips, done or error."""
+    """Stream one coach reply as NDJSON events: text deltas, tool chips, allowance, done or error."""
     if not enabled(svc):
-        yield _event("error", "Add ANTHROPIC_API_KEY to .env on the server to turn on the coach.")
+        yield _event("error", "The coach isn't switched on yet (no Anthropic API key on the server).")
         return
-    if not _chat_lock.acquire(blocking=False):
+    if svc.budget and svc.budget.remaining() <= 0:
+        yield _event("error", OUT_OF_ALLOWANCE)
+        return
+    lock = _chat_locks.setdefault(svc.db.schema or "", threading.Lock())
+    if not lock.acquire(blocking=False):
         yield _event("error", "The coach is still answering your previous message.")
         return
     try:
         yield from _chat(svc, text)
     finally:
-        _chat_lock.release()
+        lock.release()
 
 
 def _chat(svc: Services, text: str) -> Iterator[str]:
@@ -307,6 +314,9 @@ def _chat(svc: Services, text: str) -> Iterator[str]:
     messages = _messages(svc, tid)
     parse_retries = 0
     for _ in range(MAX_TURNS):
+        if svc.budget and svc.budget.remaining() <= 0:
+            yield _event("error", OUT_OF_ALLOWANCE)
+            return
         try:
             with client.beta.messages.stream(**_params(svc), tools=tools, messages=messages) as stream:
                 for ev in stream:
@@ -318,6 +328,8 @@ def _chat(svc: Services, text: str) -> Iterator[str]:
                         yield _event("thinking")
                 final = stream.get_final_message()
             parse_retries = 0
+            if svc.budget:
+                svc.budget.record(getattr(final, "model", None) or svc.settings.coach_model, getattr(final, "usage", None))
         except ValueError:
             # Tool input the SDK couldn't parse at all; nothing was stored for this turn, so re-issue it.
             parse_retries += 1
@@ -358,6 +370,8 @@ def _chat(svc: Services, text: str) -> Iterator[str]:
         if final.stop_reason == "max_tokens":
             yield _event("error", "The reply hit the length limit.")
             return
+    if svc.budget:
+        yield _event("allowance", round(svc.budget.fraction_left(), 3))
     yield _event("done")
 
 
@@ -382,6 +396,8 @@ def generate_briefing(svc: Services) -> dict[str, Any]:
         {"role": "user", "content": [{"type": "text", "text": BRIEFING_PROMPT}, {"type": "text", "text": data}]},
     ]) as stream:
         final = stream.get_final_message()
+    if svc.budget:
+        svc.budget.record_briefing(getattr(final, "model", None) or svc.settings.coach_model, getattr(final, "usage", None))
     if final.stop_reason == "refusal":
         raise RuntimeError("briefing was declined")
     body = "\n".join(b.text for b in final.content if b.type == "text").strip()
@@ -419,7 +435,7 @@ def notices(svc: Services, today: date | None = None, now: Callable[[], datetime
 
     last = db.query_one("SELECT started_at, status FROM sync_runs ORDER BY started_at DESC LIMIT 1")
     if not last:
-        out.append({"level": "warn", "title": "No Garmin sync yet", "detail": "Run tricoach login and backfill on the server."})
+        out.append({"level": "warn", "title": "No Garmin sync yet", "detail": "Press Connect Garmin to bring in your training."})
     elif last["status"] not in ("ok", "running"):
         out.append({"level": "warn", "title": "Last sync failed", "detail": f"Attempt at {last['started_at'][:16]} ended '{last['status']}'."})
     elif last["started_at"] < (now() - timedelta(hours=36)).isoformat(sep=" "):

@@ -37,12 +37,24 @@
   .brief-h { font-size: 15.5px; line-height: 1.45; letter-spacing: -.01em; color: var(--text); margin-bottom: 12px; }
   .brief .md { font-size: 13.5px; color: var(--text-2); }
   .setup code { font: 12.5px "Geist Mono", monospace; background: var(--surface-2); padding: 2px 6px; border-radius: 5px; color: var(--text); }
+  .allow { display: inline-flex; align-items: center; gap: 8px; }
+  .allow i { width: 64px; height: 5px; border-radius: 99px; background: var(--surface-2); overflow: hidden; display: inline-block; }
+  .allow b { display: block; height: 100%; background: var(--accent); }
   @media (max-width: 960px) {
     .coach { grid-template-columns: 1fr; }
-    .side { position: static; order: -1; }
+    .side { position: static; display: contents; }
+    .brief { order: -1; }
     .chat { min-height: 60vh; }
   }
-  @media (max-width: 640px) { .log { padding: 8px 16px 20px; } .msg.user { max-width: 92%; } .hint span:last-child { display: none; } }
+  @media (max-width: 640px) {
+    .head { margin-bottom: 16px; } .head .sub { display: none; }
+    .log { padding: 8px 14px 20px; } .msg.user { max-width: 92%; }
+    .hint > span:first-child { display: none; }
+    .composer { bottom: calc(66px + env(safe-area-inset-bottom)); border-radius: 0 0 14px 14px; }
+    .brief .md { display: none; } .brief.open .md { display: block; }
+    .brief .more { display: inline-flex !important; }
+    .prompts { grid-template-columns: 1fr; }
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -56,11 +68,8 @@
     <div class="log" id="log">
       {% if not enabled %}
       <div class="intro setup">
-        <h3>Connect the coach</h3>
-        <p class="muted">The chat and daily briefing run on Claude and need an Anthropic API key on the server. Add this line to <code>/opt/tri-coach/.env</code>, then restart:</p>
-        <pre style="margin:14px 0">ANTHROPIC_API_KEY=sk-ant-…
-docker compose up -d app</pre>
-        <p class="muted">Notices on this page work without it.</p>
+        <h3>The coach is warming up</h3>
+        <p class="muted">Chat and briefings aren't switched on yet. Notices on this page already work.</p>
       </div>
       {% endif %}
     </div>
@@ -72,7 +81,8 @@ docker compose up -d app</pre>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
         </button>
       </div>
-      <div class="hint"><span>Enter to send · Shift+Enter for a new line</span><span>reads your data · drafts workouts · never pushes to Garmin</span></div>
+      <div class="hint"><span>Enter to send · Shift+Enter for a new line</span>
+        {% if allowance is not none %}<span class="allow" title="Coach time left today"><i><b id="allow-bar" style="width:{{ (allowance * 100) | round }}%"></b></i><span id="allow-txt">{{ (allowance * 100) | round | int }}% left today</span></span>{% endif %}</div>
     </form>
     {% endif %}
   </section>
@@ -84,6 +94,7 @@ docker compose up -d app</pre>
       <div class="panel-b">
         <div id="brief">
         {% if briefing %}<div class="brief-h">{{ briefing.headline }}</div><div class="md" data-md="{{ briefing.body }}"></div>
+        <button class="btn more" type="button" style="display:none;margin-top:4px" onclick="this.closest('.brief').classList.toggle('open');this.textContent=this.closest('.brief').classList.contains('open')?'Less':'Full briefing'">Full briefing</button>
         {% else %}<div class="muted">{{ 'No briefing yet. One is written after each morning sync.' if enabled else 'Briefings need the API key.' }}</div>{% endif %}
         </div>
         {% if enabled %}<button class="btn" id="brief-btn" style="margin-top:16px">{{ 'Refresh' if briefing else 'Write one now' }}</button>{% endif %}
@@ -167,6 +178,7 @@ async function ask(text) {
         if (ev.t === 'text') { acc += ev.v; paint(); }
         else if (ev.t === 'tool') { chip(el, ev.v); if (acc && !acc.endsWith('\n\n')) acc += '\n\n'; }
         else if (ev.t === 'error') { body.insertAdjacentHTML('beforeend', `<p class="err">${esc(ev.v)}</p>`); }
+        else if (ev.t === 'allowance') { const b = document.getElementById('allow-bar'); if (b) { b.style.width = (ev.v * 100) + '%'; document.getElementById('allow-txt').textContent = Math.round(ev.v * 100) + '% left today'; } }
       }
     }
   } catch (e) {

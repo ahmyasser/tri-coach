@@ -17,7 +17,13 @@ log = logging.getLogger(__name__)
 
 PAGE = 100
 DETAIL_SPORTS = ("swim", "run", "bike")  # activities whose laps/intervals we store
-_sync_lock = threading.Lock()
+_sync_locks: dict[str | None, threading.Lock] = {}
+_locks_guard = threading.Lock()
+
+
+def _lock_for(schema: str | None) -> threading.Lock:
+    with _locks_guard:
+        return _sync_locks.setdefault(schema, threading.Lock())
 
 
 def now_str() -> str:
@@ -40,7 +46,8 @@ class Syncer:
     # ------------------------------------------------------------------ public
     def run(self, kind: str = "daily", full: bool = False) -> dict[str, Any]:
         """Run a sync. ``full=True`` re-walks the whole activity history."""
-        if not _sync_lock.acquire(blocking=False):
+        lock = _lock_for(self.db.schema)
+        if not lock.acquire(blocking=False):
             raise SyncBusy("A sync is already running")
         run_id = uuid.uuid4().hex
         self.db.execute(
@@ -62,7 +69,7 @@ class Syncer:
                 "UPDATE sync_runs SET finished_at = :t, status = :s, details = :d WHERE id = :id",
                 {"t": now_str(), "s": status, "d": json.dumps(stats), "id": run_id},
             )
-            _sync_lock.release()
+            lock.release()
         return stats
 
     # -------------------------------------------------------------- activities

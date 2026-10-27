@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Privacy · {{ brand }}{% endblock %}
+{% block content %}
+<article class="doc">
+  <div class="eyebrow">Last updated 27 October 2026</div>
+  <h1>Privacy policy</h1>
+  <p class="sub">The short version: we use your training data to coach you, we keep it separate from everyone else's, we never sell it, and you can delete it whenever you like.</p>
+
+  <h2>What we collect</h2>
+  <ul>
+    <li><b>Account:</b> your email address and first name, and your Google account ID if you sign in with Google.</li>
+    <li><b>Training and health data from Garmin:</b> activities (with laps, pace, heart rate, power), sleep, resting heart rate and HRV.</li>
+    <li><b>Garmin access tokens:</b> stored encrypted so we can sync each morning. We never store your Garmin password; it is sent to Garmin to sign you in and then discarded.</li>
+    <li><b>What you tell the coach:</b> your chats, goals, notes and the workouts it drafts.</li>
+    <li><b>Usage:</b> how much coach time you use each day, and basic server logs.</li>
+  </ul>
+
+  <h2>How we use it</h2>
+  <p>Only to run {{ brand }} for you: syncing your data, showing your dashboard, writing your briefings, answering your questions and sending workouts you approve to Garmin. We don't sell your data, show ads, or share it with anyone except the services below.</p>
+
+  <h2>Who processes it</h2>
+  <ul>
+    <li><b>Hetzner</b> (Germany) hosts our servers and database.</li>
+    <li><b>Anthropic</b> runs the AI coach. Your question and the relevant training data are sent to it to produce an answer. Under its commercial terms, Anthropic does not train its models on this data.</li>
+    <li><b>Garmin</b> is where your data comes from. During the beta we connect using your Garmin sign-in rather than Garmin's official partner program.</li>
+    <li><b>Google</b> handles sign-in if you choose "Continue with Google".</li>
+    <li><b>Resend</b> delivers sign-in emails.</li>
+  </ul>
+
+  <h2>Health data</h2>
+  <p>Heart rate, HRV and sleep are health data. By connecting Garmin you agree that we process them for the coaching described above. You can withdraw that at any time by disconnecting Garmin or deleting your account.</p>
+
+  <h2>Keeping it separate and safe</h2>
+  <p>Each person's training data lives in its own private section of our database. Connections are encrypted (HTTPS), Garmin tokens are encrypted at rest, and only the founder has admin access to the servers.</p>
+
+  <h2>Your choices</h2>
+  <ul>
+    <li><b>Delete everything:</b> Settings → Delete my account removes your account, training data, chats and Garmin connection immediately.</li>
+    <li><b>Disconnect Garmin:</b> stops new data coming in.</li>
+    <li><b>Get a copy or ask a question:</b> email us{% if contact %} at <a href="mailto:{{ contact }}">{{ contact }}</a>{% endif %}.</li>
+  </ul>
+
+  <h2>Changes</h2>
+  <p>If we change this policy in a way that matters, we'll tell you by email or in the app before it takes effect.</p>
+</article>
+<style>
+  .doc { max-width: 720px; margin: 0 auto; color: var(--text-2); font-size: 15.5px; line-height: 1.65; }
+  .doc h1 { margin-bottom: 8px; } .doc .sub { font-size: 17px; margin-bottom: 28px; }
+  .doc h2 { font-size: 17px; color: var(--text); margin: 32px 0 8px; }
+  .doc b { color: var(--text); font-weight: 500; } .doc a { text-decoration: underline; text-underline-offset: 3px; }
+  .doc ul { padding-left: 20px; } .doc li { margin: 6px 0; }
+</style>
+{% endblock %}

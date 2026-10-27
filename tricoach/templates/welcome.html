@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Welcome · {{ brand }}{% endblock %}
+{% block content %}
+<div style="max-width:460px;margin:4vh auto 0">
+  <div class="eyebrow">Step 1 of 2</div>
+  <h1>Tell your coach about you</h1>
+  <div class="sub">Two quick things so the coach talks to you, not to "the athlete".</div>
+  <form class="panel" id="f" style="margin-top:24px">
+    <div class="panel-b" style="display:flex;flex-direction:column;gap:14px">
+      <label class="eyebrow" for="name" style="margin:0">First name</label>
+      <input id="name" name="name" autocomplete="given-name" required value="{{ (user.name or '').split(' ')[0] }}" style="height:46px;font-size:16px">
+      <span class="eyebrow" style="margin:6px 0 0">Main sport</span>
+      <div class="choices" role="radiogroup">
+        {% for s in sports %}<label class="choice"><input type="radio" name="focus" value="{{ s }}" {{ 'checked' if loop.first }}><span>{{ s | capitalize }}</span></label>{% endfor %}
+      </div>
+      <button class="btn primary" style="height:46px;justify-content:center;margin-top:8px">Continue</button>
+      <p class="err" id="err" hidden style="color:var(--critical);margin:0"></p>
+    </div>
+  </form>
+</div>
+<style>
+  .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+  .choice input { position: absolute; opacity: 0; pointer-events: none; }
+  .choice span { display: flex; align-items: center; justify-content: center; height: 44px; border-radius: 10px; border: 1px solid var(--line-2);
+                 cursor: pointer; color: var(--text-2); transition: border-color .15s, color .15s, background .15s; }
+  .choice input:checked + span { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+  .choice input:focus-visible + span { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+</style>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('f').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, btn = f.querySelector('button'), err = document.getElementById('err');
+  btn.disabled = true; err.hidden = true;
+  const r = await fetch('/api/profile', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Requested-With': 'tricoach'},
+    body: JSON.stringify({name: f.name.value, focus: f.focus.value, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone})});
+  const j = await r.json();
+  if (j.error) { err.textContent = j.error; err.hidden = false; btn.disabled = false; return; }
+  location.href = '/connect';
+});
+</script>
+{% endblock %}

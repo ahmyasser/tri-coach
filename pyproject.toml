@@ -18,6 +18,8 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "tzdata",
     "anthropic>=2.3,<3",
+    "itsdangerous>=2.1",
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]
@@ -30,4 +32,4 @@ tricoach = "tricoach.cli:main"
 include = ["tricoach*"]
 
 [tool.setuptools.package-data]
-tricoach = ["templates/*.html"]
+tricoach = ["templates/*.html", "static/*"]

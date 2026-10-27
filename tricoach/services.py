@@ -20,6 +20,10 @@ class Services:
     api_factory: Callable[[], GarminAPI]
     # Builds the Anthropic client for the coach page; None means "use ANTHROPIC_API_KEY" (tests inject a fake)
     llm_factory: Callable[[], Any] | None = None
+    # Multi-user: the account row, its AI allowance, and a hook that stores refreshed Garmin tokens
+    user: dict[str, Any] | None = None
+    budget: Any = None
+    save_garmin_tokens: Callable[[], None] | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     @property

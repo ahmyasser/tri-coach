@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Admin · {{ brand }}{% endblock %}
+{% block content %}
+<div class="head">
+  <div><div class="eyebrow">Admin</div><h1>Beta</h1>
+  <div class="sub">{{ users | length }} users · {{ waitlist | length }} on the waitlist · email {{ 'on' if email_enabled else 'off (copy links by hand)' }}</div></div>
+  <button class="btn primary" id="new-invite">New invite link</button>
+</div>
+<div class="panel" id="out-panel" hidden><div class="panel-b"><div class="eyebrow">Send this</div>
+  <div class="copy"><input readonly id="out" aria-label="Link"><button class="btn" data-copy>Copy</button></div><p class="note" id="out-note"></p></div></div>
+
+<div class="tiles">
+  <div class="tile"><div class="l">Users</div><div class="v">{{ users | length }}</div><div class="n">{{ users | selectattr('garmin_tokens') | list | length }} with Garmin</div></div>
+  <div class="tile"><div class="l">AI spend · 30 d</div><div class="v">${{ '%.2f' | format(users | sum(attribute='chat_usd') + users | sum(attribute='brief_usd')) }}</div><div class="n">chat ${{ '%.2f' | format(users | sum(attribute='chat_usd')) }} · briefings ${{ '%.2f' | format(users | sum(attribute='brief_usd')) }}</div></div>
+  <div class="tile"><div class="l">Waitlist</div><div class="v">{{ waitlist | rejectattr('invited_code') | list | length }}</div><div class="n">not invited yet</div></div>
+  <div class="tile"><div class="l">Invites</div><div class="v">{{ invites | sum(attribute='uses') }}</div><div class="n">used of {{ invites | sum(attribute='max_uses') }}</div></div>
+</div>
+
+<div class="panel">
+  <div class="panel-h"><h2>Users</h2></div>
+  <div class="panel-b flush"><table><thead><tr><th>Name</th><th class="hide-sm">Email</th><th>Tier</th><th class="num">Today</th><th class="num hide-sm">30 d</th><th class="hide-sm">Garmin</th><th class="hide-sm">Joined</th><th></th></tr></thead><tbody>
+  {% for u in users %}<tr>
+    <td>{{ u.name or '–' }}</td><td class="hide-sm">{{ u.email }}</td>
+    <td><select data-tier="{{ u.id }}" aria-label="Tier for {{ u.email }}"><option {{ 'selected' if u.tier=='free' }}>free</option><option {{ 'selected' if u.tier=='pro' }}>pro</option></select></td>
+    <td class="num">${{ '%.2f' | format(u.today_usd) }} / {{ '%.2f' | format(u.cap_usd) }}</td>
+    <td class="num hide-sm">${{ '%.2f' | format(u.chat_usd + u.brief_usd) }}</td>
+    <td class="hide-sm">{{ '✓' if u.garmin_tokens else '–' }}</td><td class="mono hide-sm">{{ u.created_at[:10] }}</td>
+    <td><button class="btn" data-link="{{ u.email }}" title="One-time sign-in link to send by hand">Login link</button></td>
+  </tr>{% endfor %}</tbody></table></div>
+</div>
+
+<div class="panel">
+  <div class="panel-h"><h2>Waitlist</h2><span class="meta">oldest first</span></div>
+  <div class="panel-b flush"><table><thead><tr><th>Email</th><th class="hide-sm">Joined</th><th></th></tr></thead><tbody>
+  {% for w in waitlist %}<tr><td>{{ w.email }}</td><td class="mono hide-sm">{{ w.created_at[:10] }}</td>
+    <td>{% if w.invited_code %}<span class="pill">invited {{ w.invited_code }}</span>{% else %}<button class="btn" data-invite="{{ w.email }}">Invite</button>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="3" class="empty">Nobody yet.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+
+<div class="panel">
+  <div class="panel-h"><h2>Invite codes</h2></div>
+  <div class="panel-b flush"><table><thead><tr><th>Code</th><th>For</th><th class="num">Used</th><th class="hide-sm">Created</th></tr></thead><tbody>
+  {% for i in invites %}<tr><td class="mono">{{ i.code }}</td><td>{{ i.note or '–' }}</td><td class="num">{{ i.uses }} / {{ i.max_uses }}</td><td class="mono hide-sm">{{ i.created_at[:10] }}</td></tr>
+  {% else %}<tr><td colspan="4" class="empty">No invites yet.</td></tr>{% endfor %}</tbody></table></div>
+</div>
+<style>.copy { display: flex; gap: 8px; } .copy input { flex: 1; min-width: 0; font: 12px "Geist Mono", monospace; }</style>
+{% endblock %}
+{% block scripts %}
+<script>
+const H = {'Content-Type': 'application/json', 'X-Requested-With': 'tricoach'};
+const post = (url, data) => fetch(url, {method: 'POST', headers: H, body: JSON.stringify(data || {})}).then(r => r.json());
+function show(link, note) {
+  document.getElementById('out-panel').hidden = false; document.getElementById('out').value = link;
+  document.getElementById('out-note').textContent = note || ''; window.scrollTo({top: 0, behavior: 'smooth'});
+}
+document.getElementById('new-invite').addEventListener('click', async () => {
+  const note = prompt('Who is this invite for? (optional)') || '';
+  const j = await post('/api/admin/invite', {note}); show(j.link, `Code ${j.code}. Works once.`);
+});
+document.querySelectorAll('[data-invite]').forEach(b => b.addEventListener('click', async () => {
+  const j = await post('/api/admin/invite', {email: b.dataset.invite});
+  b.outerHTML = `<span class="pill">invited ${j.code}</span>`;
+  show(j.link, j.emailed ? `Emailed to ${b.dataset.invite}.` : `Email is off: send this link to ${b.dataset.invite} yourself.`);
+}));
+document.querySelectorAll('[data-link]').forEach(b => b.addEventListener('click', async () => {
+  const j = await post('/api/admin/login-link', {email: b.dataset.link});
+  if (j.error) return alert(j.error);
+  show(j.link, `One-time sign-in for ${b.dataset.link}, valid 24 hours.`);
+}));
+document.querySelectorAll('[data-tier]').forEach(s => s.addEventListener('change', async () => {
+  const j = await post('/api/admin/tier', {user_id: s.dataset.tier, tier: s.value}); if (j.error) alert(j.error);
+}));
+document.querySelector('[data-copy]').addEventListener('click', async e => {
+  const i = document.getElementById('out'); i.select();
+  try { await navigator.clipboard.writeText(i.value); } catch (err) { document.execCommand('copy'); }
+  e.target.textContent = 'Copied'; setTimeout(() => e.target.textContent = 'Copy', 1500);
+});
+</script>
+{% endblock %}

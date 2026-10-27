@@ -6,7 +6,7 @@ import re
 import threading
 import uuid
 from datetime import date, timedelta
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from mcp.server.mcpserver import MCPServer
 
@@ -43,81 +43,79 @@ Count volume with is_parent = 0 (legs are separate rows). Dates are 'YYYY-MM-DD'
 _WRITE = re.compile(r"\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|attach|pragma|vacuum)\b", re.I)
 
 
-def build_mcp(svc: Services) -> MCPServer:
-    name, focus = svc.settings.athlete_name, svc.settings.athlete_focus
-    mcp = MCPServer("tri-coach", instructions=INSTRUCTIONS.format(
-        who=f"{name}'s" if name else "the athlete's", focus=f"- {focus.capitalize()} is the main focus.\n" if focus else ""))
-    db = svc.db
+def build_mcp(current: Callable[[], Services]) -> MCPServer:
+    """``current()`` returns the Services of the user making the request (set by the web gate from the URL token)."""
+    mcp = MCPServer("tri-coach", instructions=INSTRUCTIONS.format(who="the athlete's", focus=""))
 
     # ------------------------------------------------------------- reading
     @mcp.tool()
     def training_overview() -> dict[str, Any]:
         """Data coverage per sport, last sync, data-quality issues, and current acute vs chronic training load."""
-        return {**analytics.overview(db), "load": analytics.load_status(db)}
+        return {**analytics.overview(current().db), "load": analytics.load_status(current().db)}
 
     @mcp.tool()
     def training_volume(period: Literal["week", "month"] = "week", count: int = 12) -> list[dict[str, Any]]:
         """Hours, km and Garmin training load per sport for the last `count` weeks (Mon-start) or months."""
-        return analytics.volume_by_period(db, period, max(1, min(count, 104)))
+        return analytics.volume_by_period(current().db, period, max(1, min(count, 104)))
 
     @mcp.tool()
     def list_activities(days: int = 14, sport: Literal["swim", "bike", "run", "multisport", "strength", "other"] | None = None) -> list[dict[str, Any]]:
         """Activities in the last `days` days, newest first, with pace/speed and HR."""
-        return analytics.recent_activities(db, max(1, min(days, 3650)), sport)
+        return analytics.recent_activities(current().db, max(1, min(days, 3650)), sport)
 
     @mcp.tool()
     def get_activity(activity_id: int) -> dict[str, Any]:
         """One activity with all laps/intervals (swim: stroke, pace/100m, strokes per length), HR zones, training effect."""
-        return analytics.activity_detail(db, activity_id) or {"error": f"activity {activity_id} not found"}
+        return analytics.activity_detail(current().db, activity_id) or {"error": f"activity {activity_id} not found"}
 
     @mcp.tool()
     def swim_trend(months: int = 12) -> list[dict[str, Any]]:
         """Swim progress per month and venue (25 m pool / 50 m pool / open water): sessions, km, average pace,
         median freestyle rep pace (100-400 m reps, glitches filtered), SWOLF and strokes per length."""
-        return analytics.swim_trend(db, max(1, min(months, 60)))
+        return analytics.swim_trend(current().db, max(1, min(months, 60)))
 
     @mcp.tool()
     def swim_best_efforts(since: str | None = None) -> dict[str, Any]:
         """Fastest freestyle intervals (100/200/400/800+) since a date (default 180 days) and CSS (saved or estimated)."""
-        return analytics.swim_best_efforts(db, since)
+        return analytics.swim_best_efforts(current().db, since)
 
     @mcp.tool()
     def race_results() -> list[dict[str, Any]]:
         """Multisport races with swim/T1/bike/T2/run splits."""
-        return analytics.race_results(db)
+        return analytics.race_results(current().db)
 
     @mcp.tool()
     def wellness(days: int = 28) -> list[dict[str, Any]]:
         """Daily resting HR, overnight HRV (and status), sleep duration and score."""
-        return analytics.wellness_trend(db, max(1, min(days, 400)))
+        return analytics.wellness_trend(current().db, max(1, min(days, 400)))
 
     @mcp.tool()
     def intensity_distribution(weeks: int = 8) -> dict[str, Any]:
         """Share of time in HR zones 1-5 per sport over the last `weeks` weeks."""
-        return analytics.zone_distribution(db, max(1, min(weeks, 52)))
+        return analytics.zone_distribution(current().db, max(1, min(weeks, 52)))
 
     @mcp.tool(description="Run a read-only SQL SELECT for anything the other tools don't cover. Max 500 rows.\n" + SCHEMA_DOC)
     def run_sql(sql: str) -> dict[str, Any]:
         stmt = sql.strip().rstrip(";")
         if ";" in stmt or not re.match(r"^\s*(select|with)\b", stmt, re.I) or _WRITE.search(stmt):
             return {"error": "Only a single SELECT/WITH query is allowed"}
-        with db.readonly():
-            rows = db.query_raw(stmt, 500)
+        with current().db.readonly():
+            rows = current().db.query_raw(stmt, 500)
         return {"rows": rows, "row_count": len(rows)}
 
     # -------------------------------------------------- athlete & decisions
     @mcp.tool()
     def get_athlete_profile() -> dict[str, Any]:
         """Saved athlete settings (CSS, goals, races, availability...) and the most recent coaching notes."""
-        settings = {r["key"]: r["value"] for r in db.query("SELECT key, value FROM athlete_settings ORDER BY key")}
-        notes = db.query("SELECT created_at, topic, body FROM coach_notes ORDER BY created_at DESC LIMIT 20")
+        settings = {r["key"]: r["value"] for r in current().db.query("SELECT key, value FROM athlete_settings ORDER BY key")}
+        notes = current().db.query("SELECT created_at, topic, body FROM coach_notes ORDER BY created_at DESC LIMIT 20")
         return {"settings": settings, "recent_notes": notes}
 
     @mcp.tool()
     def set_athlete_setting(key: str, value: str) -> dict[str, Any]:
         """Save an athlete setting, e.g. goal_race='Ironman 70.3 Egypt 2027-03-07', weekly_hours='8-10',
         pool_access='25 m Mon/Wed/Fri'. For CSS use set_css."""
-        db.set_setting(key, value, now_str())
+        current().db.set_setting(key, value, now_str())
         return {"saved": key}
 
     @mcp.tool()
@@ -126,15 +124,15 @@ def build_mcp(svc: Services) -> MCPServer:
         secs = analytics.parse_pace(pace_per_100m)
         if not 60 <= secs <= 240:
             return {"error": "CSS should be between 1:00 and 4:00 per 100 m"}
-        db.set_setting("css_pace_s", secs, now_str())
-        db.set_setting("css_source", f"{source} ({date.today().isoformat()})", now_str())
+        current().db.set_setting("css_pace_s", secs, now_str())
+        current().db.set_setting("css_source", f"{source} ({date.today().isoformat()})", now_str())
         return {"css_pace_100m": analytics.pace_per_100m(secs)}
 
     @mcp.tool()
     def save_note(body: str, topic: str | None = None) -> dict[str, Any]:
         """Record a coaching decision, test result or observation (e.g. topic='plan', 'injury', 'test')."""
         nid = uuid.uuid4().hex[:12]
-        db.execute("INSERT INTO coach_notes (id, created_at, topic, body) VALUES (:id, :t, :topic, :body)",
+        current().db.execute("INSERT INTO coach_notes (id, created_at, topic, body) VALUES (:id, :t, :topic, :body)",
                    {"id": nid, "t": now_str(), "topic": topic, "body": body})
         return {"saved": nid}
 
@@ -146,12 +144,14 @@ def build_mcp(svc: Services) -> MCPServer:
         if topic:
             sql += " WHERE topic = :topic"
             params["topic"] = topic
-        return db.query(sql + " ORDER BY created_at DESC LIMIT :lim", params)
+        return current().db.query(sql + " ORDER BY created_at DESC LIMIT :lim", params)
 
     # ---------------------------------------------------------------- sync
     @mcp.tool()
     def sync_now(full: bool = False) -> dict[str, Any]:
         """Pull new data from Garmin now (normally runs daily). full=True re-walks all history (slow)."""
+        svc = current()  # resolve the user here; the thread below doesn't see the request context
+
         def job() -> None:
             try:
                 svc.syncer().run(kind="manual-full" if full else "manual", full=full)
@@ -174,33 +174,33 @@ def build_mcp(svc: Services) -> MCPServer:
                power_zone | power_w '200-220'; optional cadence '85-95'; note (shown on the watch)}
         repeat: {repeat: n, steps:[...], skip_last_rest: bool}
         """
-        return svc.planner.create(spec, notes=notes, scheduled_date=scheduled_date)
+        return current().planner.create(spec, notes=notes, scheduled_date=scheduled_date)
 
     @mcp.tool()
     def update_workout(workout_id: str, spec: WorkoutSpec | None = None, scheduled_date: str | None = None,
                        notes: str | None = None) -> dict[str, Any]:
         """Edit a draft workout (spec, date or notes)."""
-        return svc.planner.update(workout_id, spec.model_dump(exclude_none=True) if spec else None, notes, scheduled_date)
+        return current().planner.update(workout_id, spec.model_dump(exclude_none=True) if spec else None, notes, scheduled_date)
 
     @mcp.tool()
     def list_workouts(since: str | None = None, status: Literal["draft", "uploaded", "scheduled"] | None = None) -> list[dict[str, Any]]:
         """Planned workouts (drafts and ones on the Garmin calendar). `since` defaults to 7 days ago."""
-        return svc.planner.list(since or (date.today() - timedelta(days=7)).isoformat(), status)
+        return current().planner.list(since or (date.today() - timedelta(days=7)).isoformat(), status)
 
     @mcp.tool()
     def push_workout(workout_id: str, scheduled_date: str | None = None) -> dict[str, Any]:
         """Upload a draft to Garmin Connect and schedule it (YYYY-MM-DD). Only after the athlete approved it."""
-        return svc.planner.push(workout_id, scheduled_date)
+        return current().planner.push(workout_id, scheduled_date)
 
     @mcp.tool()
     def unpush_workout(workout_id: str) -> dict[str, Any]:
         """Remove a workout from the Garmin calendar and library; it stays here as a draft."""
-        return svc.planner.unpush(workout_id)
+        return current().planner.unpush(workout_id)
 
     @mcp.tool()
     def delete_workout(workout_id: str) -> dict[str, Any]:
         """Delete a planned workout (also removes it from Garmin if it was pushed)."""
-        svc.planner.delete(workout_id)
+        current().planner.delete(workout_id)
         return {"deleted": workout_id}
 
     return mcp

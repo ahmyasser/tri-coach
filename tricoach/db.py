@@ -153,17 +153,89 @@ SCHEMA = [
     """,
 ]
 
+# Shared tables (accounts, invites, AI usage). Each user's training data lives in its own schema built from SCHEMA.
+CORE_SCHEMA = [
+    """
+    CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        name TEXT,
+        google_sub TEXT UNIQUE,
+        tier TEXT NOT NULL DEFAULT 'free',
+        is_admin INTEGER NOT NULL DEFAULT 0,
+        focus TEXT,
+        timezone TEXT,
+        garmin_tokens TEXT,
+        garmin_connected_at TEXT,
+        mcp_token TEXT UNIQUE,
+        sync_token TEXT UNIQUE,
+        session_version INTEGER NOT NULL DEFAULT 1,
+        onboarded INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        last_seen_at TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS invites (
+        code TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        note TEXT,
+        max_uses INTEGER NOT NULL DEFAULT 1,
+        uses INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS waitlist (
+        email TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        sport TEXT,
+        invited_code TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS login_links (
+        token_hash TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        invite_code TEXT,
+        expires_at TEXT NOT NULL,
+        used_at TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS ai_usage (
+        user_id TEXT NOT NULL,
+        day TEXT NOT NULL,
+        cost_micro BIGINT NOT NULL DEFAULT 0,
+        input_tokens BIGINT NOT NULL DEFAULT 0,
+        output_tokens BIGINT NOT NULL DEFAULT 0,
+        requests INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (user_id, day)
+    )
+    """,
+]
+
 _NAMED = re.compile(r"(?<!:):([A-Za-z_][A-Za-z0-9_]*)")
 
 
 class Database:
-    def __init__(self, url: str):
-        self.url = url
+    """One connection, optionally scoped to a schema.
+
+    PostgreSQL: ``schema`` is created if needed and set as the connection's search_path, so the same unqualified SQL
+    reads and writes only that user's tables. SQLite (local/tests): each schema is a separate database file
+    (``<name>.db`` next to the main file), or a separate in-memory database.
+    """
+
+    def __init__(self, url: str, schema: str | None = None):
+        if schema is not None and not re.fullmatch(r"[a-z][a-z0-9_]{0,40}", schema):
+            raise ValueError(f"bad schema name {schema!r}")
+        self.url, self.schema = url, schema
         self._lock = threading.RLock()
         if url.startswith("sqlite"):
             self.kind = "sqlite"
             path = url.split("sqlite:///", 1)[1] if "sqlite:///" in url else ":memory:"
             if path != ":memory:":
+                if schema:
+                    path = str(Path(path).with_name(f"{schema}.db"))
                 Path(path).parent.mkdir(parents=True, exist_ok=True)
             self._conn = sqlite3.connect(path, check_same_thread=False)
             self._conn.row_factory = sqlite3.Row
@@ -174,6 +246,10 @@ class Database:
             from psycopg.rows import dict_row
 
             self._conn = psycopg.connect(url, autocommit=True, row_factory=dict_row)
+            if schema:
+                with self._conn.cursor() as cur:
+                    cur.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+                    cur.execute(f'SET search_path TO "{schema}"')
         else:
             raise ValueError(f"Unsupported DATABASE_URL: {url}")
 
@@ -183,9 +259,22 @@ class Database:
             return _NAMED.sub(r"%(\1)s", sql.replace("%", "%%"))
         return sql
 
-    def init_schema(self) -> None:
-        for stmt in SCHEMA:
+    def init_schema(self, statements: list[str] | None = None) -> None:
+        for stmt in statements if statements is not None else SCHEMA:
             self.execute(stmt)
+        if self.kind == "postgres" and self.schema and statements is None:
+            # A read-only role per user schema: ad-hoc SQL (run_sql) runs as this role, so it can't see other users.
+            role = f"{self.schema}_ro"
+            with self._lock, self._conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,))
+                if not cur.fetchone():
+                    cur.execute(f'CREATE ROLE "{role}" NOLOGIN')
+                cur.execute(f'GRANT USAGE ON SCHEMA "{self.schema}" TO "{role}"')
+                cur.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{self.schema}" TO "{role}"')
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
 
     def execute(self, sql: str, params: dict[str, Any] | None = None) -> None:
         with self._lock:
@@ -241,6 +330,8 @@ class Database:
                     with self._conn.cursor() as cur:
                         cur.execute("SET TRANSACTION READ ONLY")
                         cur.execute("SET LOCAL statement_timeout = '15s'")
+                        if self.schema:
+                            cur.execute(f'SET LOCAL ROLE "{self.schema}_ro"')
                     yield
                 finally:
                     self._conn.rollback()

@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}{{ brand }} · An AI coach that reads your Garmin{% endblock %}
+{% block head %}
+<meta name="description" content="{{ brand }} turns your Garmin data into a daily coaching briefing, a coach you can chat with, and workouts sent straight to your watch.">
+<style>
+  main { max-width: 1120px; }
+  .hero { display: grid; grid-template-columns: 1.1fr .9fr; gap: 56px; align-items: center; padding: 40px 0 72px; }
+  .kicker { display: inline-flex; align-items: center; gap: 8px; font: 500 11px "Geist Mono", monospace; letter-spacing: .14em; text-transform: uppercase;
+            color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); background: var(--accent-soft);
+            padding: 5px 10px; border-radius: 99px; }
+  .hero h1 { font-size: clamp(38px, 6vw, 64px); line-height: 1.02; letter-spacing: -.045em; margin: 22px 0 18px; font-weight: 500; }
+  .hero h1 em { font-style: normal; color: var(--accent); }
+  .lede { font-size: 18px; line-height: 1.55; color: var(--text-2); max-width: 520px; margin: 0; }
+  .signup { display: flex; gap: 8px; margin-top: 30px; max-width: 480px; flex-wrap: wrap; }
+  .signup input { flex: 1 1 220px; height: 48px; font-size: 16px; border-radius: 12px; padding: 0 16px; }
+  .signup .btn { height: 48px; padding: 0 20px; border-radius: 12px; font-size: 15px; }
+  .fine { color: var(--muted); font-size: 13px; margin-top: 12px; }
+  .fine a { color: var(--text-2); text-decoration: underline; text-underline-offset: 3px; }
+  .ok { color: var(--good); font-size: 14px; margin-top: 12px; }
+
+  .device { position: relative; border: 1px solid var(--line-2); border-radius: 34px; padding: 14px; background: var(--surface);
+            box-shadow: 0 40px 80px -40px rgba(0,0,0,.6), 0 0 0 8px color-mix(in srgb, var(--surface-2) 60%, transparent); max-width: 380px; margin-left: auto; }
+  .device::before { content: ""; position: absolute; inset: -1px; border-radius: 34px; pointer-events: none;
+                    background: radial-gradient(120% 60% at 50% -10%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 60%); }
+  .scr { border-radius: 22px; background: var(--bg); padding: 18px 16px; display: flex; flex-direction: column; gap: 12px; position: relative; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+  .card .t { font: 500 10px "Geist Mono", monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  .card .h { font-size: 15px; line-height: 1.4; margin-top: 8px; color: var(--text); letter-spacing: -.01em; }
+  .mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .mini div { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+  .mini b { display: block; font: 400 18px "Geist Mono", monospace; letter-spacing: -.03em; color: var(--text); }
+  .mini span { font-size: 10.5px; color: var(--muted); }
+  .bubble { align-self: flex-end; background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px 14px 4px 14px; padding: 9px 12px; font-size: 13px; color: var(--text); }
+  .reply { font-size: 13px; color: var(--text-2); line-height: 1.5; }
+  .reply b { color: var(--text); font-weight: 500; }
+  .bars { display: flex; align-items: flex-end; gap: 5px; height: 54px; margin-top: 10px; }
+  .bars i { flex: 1; border-radius: 3px 3px 0 0; background: var(--swim); }
+  .bars i:nth-child(3n+2) { background: var(--bike); } .bars i:nth-child(3n) { background: var(--run); }
+
+  section.block { padding: 72px 0; border-top: 1px solid var(--line); }
+  section.block h2 { font-size: clamp(26px, 3.6vw, 38px); letter-spacing: -.03em; font-weight: 500; color: var(--text); margin: 0 0 12px; line-height: 1.1; }
+  section.block > p { color: var(--text-2); font-size: 17px; max-width: 560px; margin: 0 0 36px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; counter-reset: s; }
+  .step { padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+  .step::before { counter-increment: s; content: "0" counter(s); font: 500 12px "Geist Mono", monospace; color: var(--accent); }
+  .step h3, .feat h3 { font-size: 17px; font-weight: 500; margin: 12px 0 6px; letter-spacing: -.01em; }
+  .step p, .feat p { color: var(--muted); margin: 0; font-size: 14.5px; }
+  .feats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .feat { background: var(--surface); padding: 26px; }
+  .feat .ico { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent);
+               border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); font-size: 15px; }
+  details { border-bottom: 1px solid var(--line); padding: 18px 0; }
+  details summary { cursor: pointer; font-size: 16px; color: var(--text); list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+  details summary::after { content: "+"; color: var(--muted); font-family: "Geist Mono", monospace; }
+  details[open] summary::after { content: "–"; }
+  details p { color: var(--text-2); margin: 10px 0 0; max-width: 680px; }
+  .final { text-align: center; padding: 88px 0 40px; }
+  .final h2 { margin-left: auto; margin-right: auto; }
+  .final .signup { margin: 26px auto 0; justify-content: center; }
+  footer { border-top: 1px solid var(--line); padding: 28px 0 8px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+           color: var(--muted); font-size: 13px; }
+  footer a:hover { color: var(--text); }
+  @media (max-width: 860px) {
+    .hero { grid-template-columns: 1fr; gap: 40px; padding-top: 16px; }
+    .device { margin: 0 auto; }
+    .steps, .feats { grid-template-columns: 1fr; }
+    section.block { padding: 56px 0; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <span class="kicker">● Private beta</span>
+    <h1>Your coach already knows <em>every session</em>.</h1>
+    <p class="lede">{{ brand }} reads your Garmin data each morning, tells you what matters today, answers your training and fuelling questions, and sends workouts straight to your watch.</p>
+    <form class="signup" data-waitlist>
+      <input type="email" name="email" placeholder="you@email.com" autocomplete="email" required aria-label="Email">
+      <button class="btn primary">Join the waitlist</button>
+    </form>
+    <p class="fine">Got an invite? <a href="/join">Use your code</a> · Already in? <a href="/login">Sign in</a></p>
+  </div>
+  <div class="device" aria-hidden="true">
+    <div class="scr">
+      <div class="card"><div class="t">✦ Today's briefing</div>
+        <div class="h">Recovery week after the race: keep it easy and fit in two quality swims.</div></div>
+      <div class="mini"><div><b>6.5h</b><span>last 7 days</span></div><div><b>58</b><span>HRV ms</span></div><div><b>1:41</b><span>best 100 m</span></div></div>
+      <div class="card"><div class="t">Weekly hours</div><div class="bars">
+        <i style="height:40%"></i><i style="height:62%"></i><i style="height:48%"></i><i style="height:80%"></i><i style="height:56%"></i>
+        <i style="height:90%"></i><i style="height:70%"></i><i style="height:35%"></i><i style="height:66%"></i></div></div>
+      <div class="bubble">What should I eat before Saturday's long ride?</div>
+      <div class="reply"><b>Saturday is your biggest day (3h30).</b> Eat a 600–800 kcal breakfast 3 hours out, then 60–80 g of carbs every hour on the bike.</div>
+    </div>
+  </div>
+</section>
+
+<section class="block">
+  <h2>Three minutes to set up.</h2>
+  <p>No spreadsheets, no manual logging. Connect once and it keeps itself up to date.</p>
+  <div class="steps">
+    <div class="step"><h3>Sign in</h3><p>With Google or a one-time email link. No new password to remember.</p></div>
+    <div class="step"><h3>Connect Garmin</h3><p>Your swims, rides, runs, sleep and HRV come in automatically every morning.</p></div>
+    <div class="step"><h3>Train smarter</h3><p>Read your briefing, ask the coach anything, and send its workouts to your watch.</p></div>
+  </div>
+</section>
+
+<section class="block">
+  <h2>Built for swim, bike and run.</h2>
+  <p>Everything is grounded in your own numbers: paces, heart rate, sleep and training load.</p>
+  <div class="feats">
+    <div class="feat"><div class="ico">✦</div><h3>A briefing every morning</h3><p>Last week versus your usual, how recovered you are, what to focus on next, and how to fuel it.</p></div>
+    <div class="feat"><div class="ico">↳</div><h3>A coach you can text</h3><p>"Is my swim improving?" "Plan my week." It looks at your data before it answers.</p></div>
+    <div class="feat"><div class="ico">⌚</div><h3>Workouts on your watch</h3><p>The coach drafts structured sessions. You check them and send them to Garmin in one tap.</p></div>
+    <div class="feat"><div class="ico">!</div><h3>Early warnings</h3><p>Load spikes, falling HRV, rising resting heart rate and short sleep get flagged before they cost you a week.</p></div>
+  </div>
+</section>
+
+<section class="block">
+  <h2>Questions</h2>
+  <details><summary>Which watches work?</summary><p>Any Garmin watch that syncs to Garmin Connect. Workouts you send appear in your Garmin calendar and on the watch after its next sync.</p></details>
+  <details><summary>What happens to my data?</summary><p>Your training data is stored in a private section of our database, separate from everyone else's. We never sell it. Your Garmin password goes to Garmin to sign you in and is never stored. You can delete your account and all your data from Settings at any time. Details are in our <a href="/privacy" style="text-decoration:underline">privacy policy</a>.</p></details>
+  <details><summary>Is it a replacement for a human coach or doctor?</summary><p>No. It's a smart training partner that's good with numbers. For injuries, illness or medical questions, see a professional.</p></details>
+  <details><summary>How much does it cost?</summary><p>Free during the beta. Paid plans with more coach time will come later, and beta users will hear about them first.</p></details>
+</section>
+
+<section class="final">
+  <h2 style="font-size:clamp(28px,4vw,44px);letter-spacing:-.035em;font-weight:500;margin:0">Start your next block with a coach.</h2>
+  <form class="signup" data-waitlist>
+    <input type="email" name="email" placeholder="you@email.com" autocomplete="email" required aria-label="Email">
+    <button class="btn primary">Join the waitlist</button>
+  </form>
+</section>
+
+<footer><span>© {{ brand }}</span><span><a href="/privacy">Privacy</a> &nbsp;·&nbsp; <a href="/terms">Terms</a> &nbsp;·&nbsp; <a href="/login">Sign in</a></span></footer>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('[data-waitlist]').forEach(f => f.addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = f.querySelector('button'), email = f.email.value;
+  btn.disabled = true; btn.textContent = 'Joining…';
+  try {
+    const r = await fetch('/api/waitlist', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Requested-With': 'tricoach'}, body: JSON.stringify({email})});
+    const j = await r.json(); if (j.error) throw new Error(j.error);
+    f.outerHTML = `<p class="ok">✓ You're on the list. We'll email ${email.replace(/[<>&"]/g, '')} when your spot opens.</p>`;
+  } catch (err) { btn.disabled = false; btn.textContent = 'Join the waitlist'; alert(err.message); }
+}));
+</script>
+{% endblock %}

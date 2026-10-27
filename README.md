@@ -67,6 +67,22 @@ https://PUBLIC_HOST/api/sync?token=<SYNC_WEBHOOK_TOKEN>
 
 Save that link as a bookmark, or as an iOS Shortcut or Android tile you tap after a workout. You can also ask Claude to sync (`sync_now`).
 
+## Accounts (multi-user)
+
+One deployment serves many athletes. Each account's training data lives in its own PostgreSQL schema (`u_<id>`),
+with a read-only role per schema so the coach's ad-hoc SQL can't reach anyone else's data. Shared tables hold
+accounts, invites, the waitlist, sign-in links and AI usage.
+
+- **Sign-in:** Google, or a one-time email link (Resend). No passwords.
+- **Beta:** `INVITE_ONLY=1` means new accounts need an invite; everyone else can join the waitlist on the landing page.
+  Invite from `/admin` (or `tricoach invite`); without email configured, `/admin` gives you links to send by hand.
+- **AI limits:** each account gets a daily allowance in USD, counted from token usage (`FREE_*` / `PRO_*`).
+  Set someone to Pro on `/admin` or with `tricoach set-tier EMAIL pro`.
+- **Garmin:** connected per account from the browser; tokens are encrypted with `TOKEN_KEY`.
+- **Admin CLI:** `tricoach users | invite | login-link EMAIL | set-tier EMAIL pro | sync EMAIL | status EMAIL`.
+- **Moving an old single-user install in:** `tricoach import-legacy --email you@x.com --name You --admin --tokens /data/garmin-tokens/garmin_tokens.json`
+  (moves this database's tables into the new account) or `tricoach import-db --email ... --from-url postgresql://...`.
+
 ## Coach page
 
 `/coach` is a chat with an AI coach that reads your training data (activities, swim reps, sleep, HRV) through the same

@@ -7,13 +7,14 @@
     <select name="sport" aria-label="Sport"><option value="">All sports</option>
     {% for s in ['swim','bike','run','multisport','strength','other'] %}<option value="{{ s }}" {{ 'selected' if sport==s }}>{{ s | capitalize }}</option>{% endfor %}</select>
     <button class="btn">Apply</button>
+    <a class="btn" href="/swim">Swim analysis →</a>
   </form>
 </div>
 <div class="panel">
-  <div class="panel-b flush"><table><thead><tr><th>When</th><th>Sport</th><th>Name</th><th class="num">Dist</th><th class="num">Time</th><th class="num">Pace</th><th class="num">HR</th><th class="num">Load</th></tr></thead><tbody>
-  {% for a in rows %}<tr><td class="mono">{{ a.start[:16] }}</td><td><span class="sport {{ a.sport }}">{{ a.sport }}</span></td><td class="name"><a href="/activities/{{ a.activity_id }}">{{ a.name }}</a></td>
-  <td class="num">{{ '{:,}'.format(a.distance_m) }} m</td><td class="num">{{ a.duration }}</td><td class="num">{{ a.pace or a.speed or '' }}</td>
-  <td class="num">{{ a.avg_hr or '' }}</td><td class="num">{{ a.training_load or '' }}</td></tr>
+  <div class="panel-b flush"><table><thead><tr><th>When</th><th class="hide-sm">Sport</th><th>Name</th><th class="num">Dist</th><th class="num hide-sm">Time</th><th class="num">Pace</th><th class="num hide-sm">HR</th><th class="num hide-sm">Load</th></tr></thead><tbody>
+  {% for a in rows %}<tr><td class="mono">{{ a.start[5:16] }}</td><td class="hide-sm"><span class="sport {{ a.sport }}">{{ a.sport }}</span></td><td class="name"><a href="/activities/{{ a.activity_id }}">{{ a.name }}</a></td>
+  <td class="num">{{ '{:,}'.format(a.distance_m) }} m</td><td class="num hide-sm">{{ a.duration }}</td><td class="num">{{ a.pace or a.speed or '' }}</td>
+  <td class="num hide-sm">{{ a.avg_hr or '' }}</td><td class="num hide-sm">{{ a.training_load or '' }}</td></tr>
   {% else %}<tr><td colspan="8" class="empty">Nothing in this range.</td></tr>{% endfor %}
   </tbody></table></div>
 </div>

@@ -53,10 +53,10 @@
 
 <div class="panel">
   <div class="panel-h"><h2>Recent sessions</h2><a class="meta" href="/activities">all activities →</a></div>
-  <div class="panel-b flush"><table><thead><tr><th>When</th><th>Sport</th><th>Name</th><th class="num">Dist</th><th class="num">Time</th><th class="num">Pace</th><th class="num">HR</th></tr></thead><tbody>
+  <div class="panel-b flush"><table><thead><tr><th>When</th><th class="hide-sm">Sport</th><th>Name</th><th class="num">Dist</th><th class="num hide-sm">Time</th><th class="num">Pace</th><th class="num hide-sm">HR</th></tr></thead><tbody>
   {% for a in recent %}
-  <tr><td class="mono">{{ a.start[5:16] }}</td><td><span class="sport {{ a.sport }}">{{ a.sport }}</span></td><td class="name"><a href="/activities/{{ a.activity_id }}">{{ a.name }}</a></td>
-  <td class="num">{{ '{:,}'.format(a.distance_m) }} m</td><td class="num">{{ a.duration }}</td><td class="num">{{ a.pace or a.speed or '' }}</td><td class="num">{{ a.avg_hr or '' }}</td></tr>
+  <tr><td class="mono">{{ a.start[5:16] }}</td><td class="hide-sm"><span class="sport {{ a.sport }}">{{ a.sport }}</span></td><td class="name"><a href="/activities/{{ a.activity_id }}">{{ a.name }}</a></td>
+  <td class="num">{{ '{:,}'.format(a.distance_m) }} m</td><td class="num hide-sm">{{ a.duration }}</td><td class="num">{{ a.pace or a.speed or '' }}</td><td class="num hide-sm">{{ a.avg_hr or '' }}</td></tr>
   {% else %}<tr><td colspan="7" class="empty">No sessions in the last 10 days.</td></tr>{% endfor %}</tbody></table></div>
 </div>
 
