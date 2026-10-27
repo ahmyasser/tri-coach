@@ -208,8 +208,8 @@ def create_app(tenants: Tenants | None = None, run_scheduler: bool | None = None
 
     async def legal(request: Request) -> Response:
         name = request.url.path.strip("/")
-        contact = settings.admin_emails.split(",")[0].strip() if settings.admin_emails else ""
-        return render(request, f"{name}.html", page=name, contact=os.getenv("CONTACT_EMAIL", contact))
+        # Only a deliberately public address goes on these pages (not the admin's personal email)
+        return render(request, f"{name}.html", page=name, contact=os.getenv("CONTACT_EMAIL", ""))
 
     @public_post
     async def api_waitlist(request: Request) -> Response:
